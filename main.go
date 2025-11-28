@@ -7,6 +7,14 @@ import (
 )
 
 func main() {
+	versionFlag := flag.Bool("version", false, "Show version information")
+	flag.Parse()
+
+	if *versionFlag {
+		fmt.Printf("Bitseal v%s (build: %s)\n", Version, Build)
+		os.Exit(0)
+	}
+
 	encCmd := flag.NewFlagSet("encrypt", flag.ExitOnError)
 	encFile := encCmd.String("file", "", "File to encrypt")
 	encOut := encCmd.String("out", "", "Output file (optional, appends .enc)")
@@ -16,7 +24,10 @@ func main() {
 	decOut := decCmd.String("out", "", "Output file (optional, removes .enc)")
 
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: cryptool <encrypt|decrypt> -file <path> [-out <path>]")
+		fmt.Println("Bitseal - File Encryption CLI Tool")
+		fmt.Printf("Version: v%s\n\n", Version)
+		fmt.Println("Usage: bitseal <encrypt|decrypt> -file <path> [-out <path>]")
+		fmt.Println("       bitseal -version")
 		os.Exit(1)
 	}
 
@@ -44,6 +55,10 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Println("✓ File decrypted successfully")
+
+	case "-version":
+		fmt.Printf("Bitseal v%s (build: %s)\n", Version, Build)
+		os.Exit(0)
 
 	default:
 		fmt.Printf("Unknown command: %s\n", os.Args[1])
