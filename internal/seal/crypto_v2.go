@@ -12,7 +12,7 @@
 // noncePrefix || counter(4, big endian) || final(1), which makes reordering,
 // duplicating, dropping and truncating chunks detectable (STREAM construction).
 
-package main
+package seal
 
 import (
 	"bufio"
@@ -38,20 +38,24 @@ const (
 
 	minChunkLog2     = 4
 	maxChunkLog2     = 24
-	defaultChunkLog2 = 16 // 64 KiB
+	DefaultChunkLog2 = 16 // 64 KiB
 
 	maxKDFThreads = 64
 )
 
-// kdfParams are the Argon2id cost parameters, stored in every V2 header so
+func init() {
+	register(2, func(p Params) CipherVersion { return newCipherV2With(p.KDF, p.ChunkLog2) })
+}
+
+// KDFParams are the Argon2id cost parameters, stored in every V2 header so
 // the defaults can be raised later without a new cipher version.
-type kdfParams struct {
+type KDFParams struct {
 	Time      uint32
 	MemoryKiB uint32
 	Threads   uint8
 }
 
-var defaultKDF = kdfParams{Time: 3, MemoryKiB: 64 * 1024, Threads: 4}
+var DefaultKDF = KDFParams{Time: 3, MemoryKiB: 64 * 1024, Threads: 4}
 
 // Upper bounds applied to parameters read from untrusted files, so a crafted
 // header cannot make decryption allocate unbounded memory.
@@ -60,7 +64,7 @@ var (
 	maxKDFMemoryKiB uint32 = 1 << 20 // 1 GiB
 )
 
-func (k kdfParams) validate() error {
+func (k KDFParams) validate() error {
 	switch {
 	case k.Threads < 1 || k.Threads > maxKDFThreads:
 		return fmt.Errorf("invalid KDF threads: %d", k.Threads)
@@ -75,15 +79,15 @@ func (k kdfParams) validate() error {
 // CipherV2 encrypts with the parameters it was created with and decrypts
 // with the parameters found in each file's header.
 type CipherV2 struct {
-	kdf       kdfParams
+	kdf       KDFParams
 	chunkLog2 uint8
 }
 
 func NewCipherV2() *CipherV2 {
-	return &CipherV2{kdf: defaultKDF, chunkLog2: defaultChunkLog2}
+	return &CipherV2{kdf: DefaultKDF, chunkLog2: DefaultChunkLog2}
 }
 
-func newCipherV2With(kdf kdfParams, chunkLog2 uint8) *CipherV2 {
+func newCipherV2With(kdf KDFParams, chunkLog2 uint8) *CipherV2 {
 	return &CipherV2{kdf: kdf, chunkLog2: chunkLog2}
 }
 
@@ -92,7 +96,7 @@ func (c *CipherV2) Version() byte { return 2 }
 type headerV2 struct {
 	flags       byte
 	chunkLog2   uint8
-	kdf         kdfParams
+	kdf         KDFParams
 	salt        [SaltSizeV2]byte
 	noncePrefix [noncePrefixSizeV2]byte
 }
@@ -126,7 +130,7 @@ func parseHeaderV2(b []byte) (headerV2, error) {
 	if h.chunkLog2 < minChunkLog2 || h.chunkLog2 > maxChunkLog2 {
 		return h, fmt.Errorf("invalid chunk size exponent: %d", h.chunkLog2)
 	}
-	h.kdf = kdfParams{
+	h.kdf = KDFParams{
 		Time:      binary.BigEndian.Uint32(b[3:]),
 		MemoryKiB: binary.BigEndian.Uint32(b[7:]),
 		Threads:   b[11],
@@ -142,10 +146,10 @@ func parseHeaderV2(b []byte) (headerV2, error) {
 func newAEADV2(h headerV2, secret Secret) (cipher.AEAD, error) {
 	material := secret.material()
 	if secret.hasKeyFile() {
-		defer wipe(material)
+		defer Wipe(material)
 	}
 	key := argon2.IDKey(material, h.salt[:], h.kdf.Time, h.kdf.MemoryKiB, h.kdf.Threads, KeySize)
-	defer wipe(key)
+	defer Wipe(key)
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -203,7 +207,7 @@ func (c *CipherV2) EncryptStream(dst io.Writer, src io.Reader, secret Secret) er
 	chunkSize := 1 << h.chunkLog2
 	br := bufio.NewReaderSize(src, chunkSize+1)
 	plain := make([]byte, chunkSize)
-	defer wipe(plain)
+	defer Wipe(plain)
 	sealed := make([]byte, 0, chunkSize+gcmTagSize)
 
 	for counter := uint32(0); ; counter++ {
@@ -266,7 +270,7 @@ func (c *CipherV2) DecryptStream(dst io.Writer, src io.Reader, secret Secret) er
 	br := bufio.NewReaderSize(src, chunkSize+gcmTagSize+1)
 	sealed := make([]byte, chunkSize+gcmTagSize)
 	plain := make([]byte, 0, chunkSize)
-	defer func() { wipe(plain[:cap(plain)]) }()
+	defer func() { Wipe(plain[:cap(plain)]) }()
 
 	for counter := uint32(0); ; counter++ {
 		n, err := io.ReadFull(br, sealed)

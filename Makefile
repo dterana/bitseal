@@ -19,7 +19,7 @@ help:
 	@echo "  lint          - Run go vet"
 
 build:
-	go build -ldflags "$(LDFLAGS)" -o bitseal
+	go build -ldflags "$(LDFLAGS)" -o bitseal ./cmd/bitseal
 
 test:
 	go test -v ./...
@@ -41,7 +41,7 @@ FUZZ_TARGETS := FuzzDecryptV2 FuzzDecryptV1 FuzzParseHeaderV2 FuzzInspect FuzzRo
 fuzz:
 	@for t in $(FUZZ_TARGETS); do \
 		echo "== $$t"; \
-		go test -run='^$$' -fuzz="^$$t$$" -fuzztime=$(FUZZTIME) . || exit 1; \
+		go test -run='^$$' -fuzz="^$$t$$" -fuzztime=$(FUZZTIME) ./internal/seal || exit 1; \
 	done
 
 clean:

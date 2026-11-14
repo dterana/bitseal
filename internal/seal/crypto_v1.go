@@ -1,8 +1,11 @@
 // ============================================================================
-// Core cryptography: shared types and the legacy V1 cipher
+// CipherV1: legacy single-block AES-256-GCM with PBKDF2 and a static salt
 // ============================================================================
+//
+// Format: [version=1:1][nonce:12][ciphertext + tag]. Kept so old files keep
+// decrypting; new files are written with the current version.
 
-package main
+package seal
 
 import (
 	"bytes"
@@ -16,72 +19,10 @@ import (
 	"golang.org/x/crypto/pbkdf2"
 )
 
-const (
-	PBKDF2Iterations = 100000
-	KeySize          = 32 // 256-bit for AES-256
-	NonceSize        = 12 // GCM standard
-	gcmTagSize       = 16
-)
+const PBKDF2Iterations = 100000
 
-// Secret is what unlocks a file: a password, and optionally a key file that
-// acts as a second factor.
-type Secret struct {
-	Password []byte
-	KeyFile  []byte
-}
-
-func (s Secret) hasKeyFile() bool { return len(s.KeyFile) > 0 }
-
-// material returns the bytes fed to the KDF. With a key file it is a fresh
-// slice (password || SHA-256(key file)) that the caller should wipe.
-func (s Secret) material() []byte {
-	if !s.hasKeyFile() {
-		return s.Password
-	}
-	sum := sha256.Sum256(s.KeyFile)
-	m := make([]byte, 0, len(s.Password)+sha256.Size)
-	m = append(m, s.Password...)
-	return append(m, sum[:]...)
-}
-
-// Wipe zeroes the secret's buffers. Best effort: copies made by the runtime
-// or by buffered readers cannot be reached.
-func (s Secret) Wipe() {
-	wipe(s.Password)
-	wipe(s.KeyFile)
-}
-
-func wipe(b []byte) {
-	for i := range b {
-		b[i] = 0
-	}
-}
-
-// FileInfo describes an encrypted file's format, read from its header alone.
-type FileInfo struct {
-	Version   byte
-	Cipher    string
-	KDF       string
-	KeyFile   bool
-	ChunkSize int // 0 when the file is a single authenticated block
-	Legacy    bool
-}
-
-// CipherVersion defines the interface for different encryption versions
-type CipherVersion interface {
-	Version() byte
-	Encrypt(plaintext []byte, secret Secret) ([]byte, error)
-	Decrypt(ciphertext []byte, secret Secret) ([]byte, error)
-	// Inspect reads only the header from src and describes the format.
-	Inspect(src io.Reader) (FileInfo, error)
-}
-
-// StreamCipher is implemented by versions that can process data of any size
-// with bounded memory.
-type StreamCipher interface {
-	CipherVersion
-	EncryptStream(dst io.Writer, src io.Reader, secret Secret) error
-	DecryptStream(dst io.Writer, src io.Reader, secret Secret) error
+func init() {
+	register(1, func(Params) CipherVersion { return NewCipherV1() })
 }
 
 // CipherV1 implements AES-256-GCM with PBKDF2 and a static salt (legacy,
@@ -121,7 +62,7 @@ func (c *CipherV1) Encrypt(plaintext []byte, secret Secret) ([]byte, error) {
 	}
 
 	key := c.deriveKey(secret.Password)
-	defer wipe(key)
+	defer Wipe(key)
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -158,7 +99,7 @@ func (c *CipherV1) Decrypt(ciphertext []byte, secret Secret) ([]byte, error) {
 	}
 
 	key := c.deriveKey(secret.Password)
-	defer wipe(key)
+	defer Wipe(key)
 
 	nonce := ciphertext[1 : 1+NonceSize]
 	encrypted := ciphertext[1+NonceSize:]

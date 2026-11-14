@@ -2,19 +2,23 @@ package main
 
 import "runtime/debug"
 
-const Version = "0.1.0"
+const Version = "0.3.0"
 
 // Build is set at link time (-ldflags "-X main.Build=<rev>"); when it is not,
 // buildString falls back to the VCS or module information in the binary.
 var Build = "dev"
 
 func buildString() string {
-	if Build != "dev" {
-		return Build
-	}
 	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return Build
+	return buildStringFrom(Build, info, ok)
+}
+
+func buildStringFrom(build string, info *debug.BuildInfo, ok bool) string {
+	if build != "dev" {
+		return build
+	}
+	if !ok || info == nil {
+		return build
 	}
 	var rev string
 	var dirty bool
@@ -38,5 +42,5 @@ func buildString() string {
 	if v := info.Main.Version; v != "" && v != "(devel)" {
 		return v
 	}
-	return Build
+	return build
 }
