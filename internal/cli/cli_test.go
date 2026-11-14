@@ -1,7 +1,9 @@
-package main
+package cli
 
 import (
 	"bytes"
+	"github.com/dterana/bitseal/internal/seal"
+	"github.com/dterana/bitseal/internal/testvectors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,15 +21,15 @@ type result struct {
 func cli(t *testing.T, input string, args ...string) result {
 	t.Helper()
 	std := captureStdio(t, input)
-	code := run(args)
+	code := std.Run(args)
 	return result{std.out.String(), std.err.String(), code}
 }
 
 func cliTerminal(t *testing.T, secrets []string, args ...string) result {
 	t.Helper()
 	std := captureStdio(t, "")
-	fakeTerminal(t, secrets...)
-	code := run(args)
+	fakeTerminal(std, secrets...)
+	code := std.Run(args)
 	return result{std.out.String(), std.err.String(), code}
 }
 
@@ -56,7 +58,7 @@ func plainFile(t *testing.T, dir, name, content string) string {
 	return p
 }
 
-func decryptsTo(t *testing.T, path string, s Secret) string {
+func decryptsTo(t *testing.T, path string, s seal.Secret) string {
 	t.Helper()
 	got, err := decryptedContent(t, fastManager(), path, s)
 	if err != nil {
@@ -88,7 +90,7 @@ func TestCLIHelp(t *testing.T) {
 func TestCLIVersion(t *testing.T) {
 	for _, a := range []string{"version", "-version", "--version"} {
 		r := cli(t, "", a)
-		if r.code != 0 || !strings.HasPrefix(r.out, "Bitseal v"+Version) {
+		if r.code != 0 || r.out != "Bitseal v9.9.9-test (build: testbuild)\n" {
 			t.Fatalf("%s: %+v", a, r)
 		}
 	}
@@ -98,19 +100,6 @@ func TestCLIUnknownCommand(t *testing.T) {
 	r := cli(t, "", "frobnicate")
 	if r.code != 1 || !strings.Contains(r.err, "Unknown command: frobnicate") {
 		t.Fatalf("%+v", r)
-	}
-}
-
-func TestBuildString(t *testing.T) {
-	old := Build
-	defer func() { Build = old }()
-	Build = "abc1234"
-	if buildString() != "abc1234" {
-		t.Fatal("an explicit Build must win")
-	}
-	Build = "dev"
-	if buildString() == "" {
-		t.Fatal("buildString must never be empty")
 	}
 }
 
@@ -445,8 +434,8 @@ func TestCLIRefusesBinaryToTerminal(t *testing.T) {
 	pf := pwFile(t, dir, "pw")
 	in := plainFile(t, dir, "a.txt", "payload")
 	std := captureStdio(t, "")
-	stdoutIsTerminal = func() bool { return true }
-	code := run([]string{"encrypt", "-password-file", pf, "-out", "-", in})
+	std.StdoutIsTerminal = func() bool { return true }
+	code := std.Run([]string{"encrypt", "-password-file", pf, "-out", "-", in})
 	if code != 1 || !strings.Contains(std.err.String(), "terminal") || std.out.Len() != 0 {
 		t.Fatalf("code=%d out=%q err=%q", code, std.out.String(), std.err.String())
 	}
@@ -653,7 +642,7 @@ func TestCLIRekeyPartialFailure(t *testing.T) {
 func TestCLIInfoLegacyFile(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "legacy.enc")
-	writeFile(t, f, mustHex(t, goldenV1Hex))
+	writeFile(t, f, mustHex(t, testvectors.V1Hex))
 
 	r := mustCLI(t, "", "info", f)
 	for _, want := range []string{"Version:   1", "PBKDF2", "static salt", "legacy", "bitseal rekey", "File:      " + f} {
@@ -669,7 +658,7 @@ func TestCLIInfoLegacyFile(t *testing.T) {
 func TestCLIInfoCurrentFile(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "v2.enc")
-	writeFile(t, f, mustHex(t, goldenV2Hex))
+	writeFile(t, f, mustHex(t, testvectors.V2Hex))
 
 	r := mustCLI(t, "", "info", "-file", f)
 	for _, want := range []string{"Version:   2", "Argon2id", "time=3", "memory=64 MiB", "threads=4", "64 KiB chunks", "Key file:  not required"} {
@@ -685,12 +674,12 @@ func TestCLIInfoCurrentFile(t *testing.T) {
 func TestCLIInfoSmallChunksAndKeyFile(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "kf.enc")
-	writeFile(t, f, mustHex(t, goldenV2MultiHex))
+	writeFile(t, f, mustHex(t, testvectors.V2MultiHex))
 	r := mustCLI(t, "", "info", f)
 	if !strings.Contains(r.out, "16 byte chunks") {
 		t.Fatalf("%s", r.out)
 	}
-	writeFile(t, f, mustHex(t, goldenV2KeyFileHex))
+	writeFile(t, f, mustHex(t, testvectors.V2KeyFileHex))
 	if r := mustCLI(t, "", "info", f); !strings.Contains(r.out, "Key file:  required") {
 		t.Fatalf("%s", r.out)
 	}
@@ -699,8 +688,8 @@ func TestCLIInfoSmallChunksAndKeyFile(t *testing.T) {
 func TestCLIInfoMultipleFilesAndErrors(t *testing.T) {
 	dir := t.TempDir()
 	a, b := filepath.Join(dir, "a.enc"), filepath.Join(dir, "b.enc")
-	writeFile(t, a, mustHex(t, goldenV1Hex))
-	writeFile(t, b, mustHex(t, goldenV2Hex))
+	writeFile(t, a, mustHex(t, testvectors.V1Hex))
+	writeFile(t, b, mustHex(t, testvectors.V2Hex))
 
 	r := mustCLI(t, "", "info", a, b)
 	if strings.Count(r.out, "File:") != 2 || !strings.Contains(r.out, "\n\nFile:") {
@@ -719,7 +708,7 @@ func TestCLIInfoMultipleFilesAndErrors(t *testing.T) {
 }
 
 func TestCLIInfoFromStdin(t *testing.T) {
-	r := mustCLI(t, string(mustHex(t, goldenV2Hex)), "info", "-file", "-")
+	r := mustCLI(t, string(mustHex(t, testvectors.V2Hex)), "info", "-file", "-")
 	if !strings.Contains(r.out, "File:      stdin") || !strings.Contains(r.out, "Version:   2") {
 		t.Fatalf("%s", r.out)
 	}
@@ -728,9 +717,72 @@ func TestCLIInfoFromStdin(t *testing.T) {
 func TestCLIInfoNeedsNoPassword(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "v2.enc")
-	writeFile(t, f, mustHex(t, goldenV2Hex))
+	writeFile(t, f, mustHex(t, testvectors.V2Hex))
 	r := cli(t, "", "info", f) // stdin is empty: any password prompt would fail
 	if r.code != 0 || strings.Contains(r.err, "password") {
 		t.Fatalf("%+v", r)
+	}
+}
+
+// ----------------------------------------------------------------------------
+// Remaining error paths
+// ----------------------------------------------------------------------------
+
+func TestNewWiresTheProcess(t *testing.T) {
+	a := New("1.2.3", "abc")
+	if a.Version != "1.2.3" || a.Build != "abc" {
+		t.Fatalf("version info not stored: %q %q", a.Version, a.Build)
+	}
+	if a.Stdin != os.Stdin || a.Stdout != os.Stdout || a.Stderr != os.Stderr {
+		t.Fatal("streams must default to the process streams")
+	}
+	if a.StdinIsTerminal == nil || a.StdoutIsTerminal == nil || a.ReadTerminalSecret == nil || a.NewManager == nil {
+		t.Fatal("every hook must be set")
+	}
+	m := a.manager()
+	if m.In != a.Stdin || m.Out != a.Stdout || m.OutIsTerminal == nil {
+		t.Fatal("the manager must use the App's streams")
+	}
+	// the terminal checks must be callable under `go test` (stdin is not a terminal)
+	_ = a.StdinIsTerminal()
+	_ = a.StdoutIsTerminal()
+}
+
+func TestCLIInfoWithoutFiles(t *testing.T) {
+	r := cli(t, "", "info")
+	if r.code != 1 || !strings.Contains(r.err, "no input file given") {
+		t.Fatalf("%+v", r)
+	}
+}
+
+func TestCLIRekeyMissingPasswordFile(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "a.enc")
+	writeV1File(t, f, "data", "pw")
+	orig := readFile(t, f)
+
+	r := cli(t, "", "rekey", "-password-file", filepath.Join(dir, "nope"), f)
+	if r.code != 1 || !strings.Contains(r.err, "password file") {
+		t.Fatalf("%+v", r)
+	}
+	if !bytes.Equal(readFile(t, f), orig) {
+		t.Fatal("file modified")
+	}
+}
+
+func TestCLIRekeyMissingNewKeyFileWhileChangingPassword(t *testing.T) {
+	dir := t.TempDir()
+	pf := pwFile(t, dir, "pw")
+	next := pwFile(t, dir, "next")
+	f := filepath.Join(dir, "a.enc")
+	writeV1File(t, f, "data", "pw")
+	orig := readFile(t, f)
+
+	r := cli(t, "", "rekey", "-password-file", pf, "-new-password-file", next, "-new-keyfile", filepath.Join(dir, "nope"), f)
+	if r.code != 1 || !strings.Contains(r.err, "key file") {
+		t.Fatalf("%+v", r)
+	}
+	if !bytes.Equal(readFile(t, f), orig) {
+		t.Fatal("file modified")
 	}
 }
