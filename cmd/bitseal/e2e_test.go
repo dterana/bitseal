@@ -2,7 +2,7 @@ package main
 
 import (
 	"bytes"
-	"github.com/dterana/bitseal/internal/testvectors"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dterana/bitseal/internal/testvectors"
 )
 
 // End-to-end tests run the compiled binary with the real Argon2 parameters,
@@ -52,8 +54,8 @@ func runBin(t *testing.T, stdin string, env []string, args ...string) binResult 
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	code := 0
 	if err := cmd.Run(); err != nil {
-		ee, ok := err.(*exec.ExitError)
-		if !ok {
+		var ee *exec.ExitError
+		if !errors.As(err, &ee) {
 			t.Fatalf("failed to run binary: %v", err)
 		}
 		code = ee.ExitCode()
@@ -344,8 +346,8 @@ func TestE2ESigintRemovesTempFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	werr := cmd.Wait()
-	ee, ok := werr.(*exec.ExitError)
-	if !ok || ee.ExitCode() != 130 {
+	var ee *exec.ExitError
+	if !errors.As(werr, &ee) || ee.ExitCode() != 130 {
 		t.Fatalf("expected exit code 130, got %v", werr)
 	}
 	noTempLeftovers(t, dir)
