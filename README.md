@@ -43,7 +43,7 @@ Versioned formats, so files you encrypt today still open after the algorithms ch
 ## Quick start
 
 ```bash
-go install github.com/dterana/bitseal@latest
+go install github.com/dterana/bitseal/cmd/bitseal@latest
 
 bitseal encrypt notes.txt            # asks for a password twice, writes notes.txt.enc
 bitseal decrypt notes.txt.enc        # restores notes.txt
@@ -108,8 +108,9 @@ make build        # embeds the git revision in `bitseal version`
 
 ### Using go install
 ```bash
-go install github.com/dterana/bitseal@latest
+go install github.com/dterana/bitseal/cmd/bitseal@latest
 ```
+The command lives in `cmd/bitseal` since v0.3.0. The older v0.1.0 release installs from the repository root (`go install github.com/dterana/bitseal@v0.1.0`).
 
 ## Usage
 
@@ -237,6 +238,8 @@ V1: [version=1:1] [nonce:12] [encrypted data + tag]      (legacy, decrypt only)
 
 V1 uses PBKDF2-SHA256 (100,000 iterations) with a static salt. It is still decrypted automatically; use `rekey` to upgrade V1 files.
 
+The complete specification, the limits applied to untrusted headers and the rules for evolving the format are in [docs/format.md](docs/format.md).
+
 The version byte allows Bitseal to automatically route decryption to the correct algorithm, even as new versions are added.
 
 ### Why version your encryption?
@@ -247,42 +250,44 @@ Bitseal solves this by embedding the version number in every encrypted file. Whe
 
 ## Architecture
 
-The codebase is organized for easy maintenance and extension:
+```
+cmd/bitseal/          entry point (thin), version and build information, end-to-end tests
+internal/cli/         commands, flags and secret input; an injectable App, no global state
+internal/seal/        cipher versions, their registry, the manager and file I/O
+internal/testvectors/ golden encrypted files that lock the on-disk formats
+internal/testutil/    helpers shared by the test suites
+docs/format.md        the file format specification and the rules for evolving it
+```
 
-| File | Responsibility |
+Everything lives under `internal/`, so the Go API is not a compatibility promise yet; the file format is (see [docs/format.md](docs/format.md)).
+
+| File in `internal/seal` | Responsibility |
 |---|---|
-| `main.go` | CLI entry point, commands and flags |
-| `crypto.go` | `CipherVersion` and `StreamCipher` interfaces, `Secret`, and the legacy V1 cipher |
-| `crypto_v2.go` | V2 cipher: chunked AES-GCM, Argon2id, header handling |
-| `cipher_manager.go` | Version detection, file operations, rekey and inspect |
+| `cipher.go` | `CipherVersion` and `StreamCipher` interfaces, `Secret`, and the version registry |
+| `crypto_v1.go` | V1: legacy single-block AES-GCM with PBKDF2 (registers itself) |
+| `crypto_v2.go` | V2: chunked AES-GCM, Argon2id, header handling (registers itself) |
+| `manager.go` | Routing by version byte, file operations, rekey and inspect |
 | `fileio.go` | Atomic writes, temp file tracking and signal cleanup |
-| `password.go` | Password prompt, pipe, file, environment and key file input |
-| `version.go` | Version and build information |
 
 ### Adding a new cipher version
 
-1. Create a new cipher implementation (see `crypto_v2.go`) implementing `CipherVersion`, and `StreamCipher` if it can stream:
+Each version lives in its own file and registers itself, so the manager and the CLI need no changes.
+
+1. Write `internal/seal/crypto_v3.go` implementing `CipherVersion` (and `StreamCipher` if it can stream), and register it:
 ```go
-type CipherV3 struct { /* ... */ }
+func init() {
+    register(3, func(p Params) CipherVersion { return newCipherV3(p) })
+}
 
 func (c *CipherV3) Version() byte { return 3 }
 func (c *CipherV3) Encrypt(plaintext []byte, secret Secret) ([]byte, error) { /* ... */ }
 func (c *CipherV3) Decrypt(ciphertext []byte, secret Secret) ([]byte, error) { /* ... */ }
 func (c *CipherV3) Inspect(src io.Reader) (FileInfo, error) { /* ... */ }
 ```
+2. Add at least one golden vector for it to `internal/testvectors`, and document the layout in `docs/format.md`.
+3. Set `CurrentVersion` in `manager.go` to `3` so new files use it.
 
-2. Register it in `cipher_manager.go`:
-```go
-ciphers: map[byte]CipherVersion{
-    1: NewCipherV1(),
-    2: newCipherV2With(kdf, chunkLog2),
-    3: NewCipherV3(),  // New!
-}
-```
-
-3. Set `CurrentVersion` in `cipher_manager.go` to `3` so new files use it, and add golden vectors for the new version in `golden_test.go`.
-
-That's it! Files encrypted with older versions will still decrypt automatically, and `rekey` upgrades them.
+The registry tests fail if a version is registered without a golden vector, if the manager cannot route it, or if `CurrentVersion` is not the highest version, and the generic tests (round trips, tampering, truncation) cover every registered version automatically. Files written with older versions keep decrypting, and `rekey` upgrades them.
 
 ## Security considerations
 
@@ -290,6 +295,7 @@ That's it! Files encrypted with older versions will still decrypt automatically,
 - **Salt**: V2 uses a random per-file salt stored in the header. V1 files use a static salt; upgrade them with `bitseal rekey`.
 - **File permissions**: Output files are created with 0600 permissions (read/write only by owner).
 - **Authentication scope**: The tool encrypts and authenticates files with the password, but a file cannot prove who wrote it. For that, use signatures alongside encrypted files.
+- **Reporting vulnerabilities**: see [SECURITY.md](SECURITY.md); use GitHub's private reporting, not a public issue.
 - **Password in memory**: Bitseal zeroes its own copies of the password and key file after use. This is best effort: Go and the terminal layer may keep other copies until the process exits.
 
 ## Limitations
@@ -342,7 +348,7 @@ tar czf - /path/to/data | ./bitseal encrypt -password-file ~/.pw -file - -out ba
 
 ### Running tests
 ```bash
-make test         # unit, CLI and end-to-end tests (the end-to-end tests build the binary)
+make test         # unit, CLI and end-to-end tests (cmd/bitseal builds the binary)
 make test-short   # skips the large-file cases
 make test-race    # with the race detector
 make cover        # per-function coverage
@@ -364,7 +370,7 @@ Pushing a tag like `v0.1.0` runs `.github/workflows/release.yml`, which tests an
 
 ## Issues and pull requests
 
-Bitseal is maintained by a single person, and pull requests can only be opened by repository collaborators, so external contributions are not accepted. Bug reports are welcome as [GitHub issues](https://github.com/dterana/bitseal/issues); please do not include passwords, key files or other sensitive data in them. Reports are handled on a best-effort basis.
+Bitseal is maintained by a single person, and pull requests can only be opened by repository collaborators, so external contributions are not accepted. Bug reports are welcome as [GitHub issues](https://github.com/dterana/bitseal/issues); please do not include passwords, key files or other sensitive data in them. Security vulnerabilities must be reported privately, see [SECURITY.md](SECURITY.md). Reports are handled on a best-effort basis.
 
 ## License
 

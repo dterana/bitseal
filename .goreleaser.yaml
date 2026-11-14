@@ -3,7 +3,8 @@ version: 2
 project_name: bitseal
 
 builds:
-  - main: .
+  - main: ./cmd/bitseal
+    binary: bitseal
     env:
       - CGO_ENABLED=0
     goos: [linux, darwin, windows]

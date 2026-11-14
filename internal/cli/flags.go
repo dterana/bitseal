@@ -1,0 +1,175 @@
+package cli
+
+import (
+	"errors"
+	"flag"
+	"fmt"
+	"strings"
+
+	"github.com/dterana/bitseal/internal/seal"
+)
+
+type stringList []string
+
+func (l *stringList) String() string     { return strings.Join(*l, ",") }
+func (l *stringList) Set(v string) error { *l = append(*l, v); return nil }
+
+func (a *App) newFlagSet(name string) *flag.FlagSet {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(a.Stderr)
+	return fs
+}
+
+func parseFlags(fs *flag.FlagSet, args []string) error {
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return err
+		}
+		return errUsage
+	}
+	return nil
+}
+
+// fileArgs are the -file/-out flags shared by the file commands.
+type fileArgs struct {
+	files stringList
+	out   string
+}
+
+func (f *fileArgs) register(fs *flag.FlagSet, withOut bool) {
+	fs.Var(&f.files, "file", "input file, repeatable (- reads stdin)")
+	if withOut {
+		fs.StringVar(&f.out, "out", "", "output file, single input only (- writes stdout)")
+	}
+}
+
+// inputs merges -file values with positional arguments and validates them.
+func (f *fileArgs) inputs(fs *flag.FlagSet) ([]string, error) {
+	files := append(append([]string(nil), f.files...), fs.Args()...)
+	switch {
+	case len(files) == 0:
+		return nil, fmt.Errorf("no input file given: use -file <path> or pass file names as arguments")
+	case len(files) > 1 && f.out != "":
+		return nil, fmt.Errorf("-out can only be used with a single input file")
+	case len(files) > 1 && containsStdin(files):
+		return nil, fmt.Errorf("stdin (-) cannot be combined with other input files")
+	}
+	return files, nil
+}
+
+func containsStdin(files []string) bool {
+	for _, f := range files {
+		if f == seal.StdioPath {
+			return true
+		}
+	}
+	return false
+}
+
+// secretFlags select where the password and key file come from. Without
+// -password-file or -password-env the password is prompted (or read from a pipe).
+type secretFlags struct {
+	passwordFile string
+	passwordEnv  string
+	keyFile      string
+}
+
+func (f *secretFlags) register(fs *flag.FlagSet) {
+	fs.StringVar(&f.passwordFile, "password-file", "", "read the password from the first line of this file")
+	fs.StringVar(&f.passwordEnv, "password-env", "", "read the password from this environment variable")
+	fs.StringVar(&f.keyFile, "keyfile", "", "use this key file as a second factor")
+}
+
+func (a *App) readPassword(f secretFlags, prompt string, confirm, stdinBusy bool) ([]byte, error) {
+	if f.passwordFile != "" && f.passwordEnv != "" {
+		return nil, fmt.Errorf("use only one of -password-file and -password-env")
+	}
+	switch {
+	case f.passwordFile != "":
+		return a.readPasswordFile(f.passwordFile)
+	case f.passwordEnv != "":
+		return readPasswordEnv(f.passwordEnv)
+	case stdinBusy:
+		return nil, fmt.Errorf("cannot read the password from stdin while the input is stdin; use -password-file or -password-env")
+	case confirm:
+		return a.promptNewPassword(prompt, "Confirm password: ")
+	}
+	return a.promptPassword(prompt)
+}
+
+func (a *App) resolveSecret(f secretFlags, prompt string, confirm, stdinBusy bool) (seal.Secret, error) {
+	pw, err := a.readPassword(f, prompt, confirm, stdinBusy)
+	if err != nil {
+		return seal.Secret{}, err
+	}
+	secret := seal.Secret{Password: pw}
+	if f.keyFile != "" {
+		kf, err := readKeyFile(f.keyFile)
+		if err != nil {
+			seal.Wipe(pw)
+			return seal.Secret{}, err
+		}
+		secret.KeyFile = kf
+	}
+	return secret, nil
+}
+
+// rekeyFlags describe how the secret changes during a rekey. By default the
+// same password and key file are kept and only the file format is upgraded.
+type rekeyFlags struct {
+	changePassword  bool
+	newPasswordFile string
+	newPasswordEnv  string
+	newKeyFile      string
+	noKeyFile       bool
+}
+
+func (r *rekeyFlags) register(fs *flag.FlagSet) {
+	fs.BoolVar(&r.changePassword, "change-password", false, "prompt for a new password")
+	fs.StringVar(&r.newPasswordFile, "new-password-file", "", "read the new password from the first line of this file")
+	fs.StringVar(&r.newPasswordEnv, "new-password-env", "", "read the new password from this environment variable")
+	fs.StringVar(&r.newKeyFile, "new-keyfile", "", "set or replace the key file")
+	fs.BoolVar(&r.noKeyFile, "no-keyfile", false, "remove the key file requirement")
+}
+
+func (r rekeyFlags) changesPassword() bool {
+	return r.changePassword || r.newPasswordFile != "" || r.newPasswordEnv != ""
+}
+
+func (a *App) newSecret(r rekeyFlags, old seal.Secret) (seal.Secret, error) {
+	if r.newPasswordFile != "" && r.newPasswordEnv != "" {
+		return seal.Secret{}, fmt.Errorf("use only one of -new-password-file and -new-password-env")
+	}
+	if r.noKeyFile && r.newKeyFile != "" {
+		return seal.Secret{}, fmt.Errorf("-no-keyfile and -new-keyfile cannot be combined")
+	}
+
+	next := seal.Secret{Password: old.Password, KeyFile: old.KeyFile}
+	var err error
+	switch {
+	case r.newPasswordFile != "":
+		next.Password, err = a.readPasswordFile(r.newPasswordFile)
+	case r.newPasswordEnv != "":
+		next.Password, err = readPasswordEnv(r.newPasswordEnv)
+	case r.changePassword:
+		next.Password, err = a.promptNewPassword("New password: ", "Confirm new password: ")
+	}
+	if err != nil {
+		return seal.Secret{}, err
+	}
+
+	switch {
+	case r.noKeyFile:
+		next.KeyFile = nil
+	case r.newKeyFile != "":
+		kf, err := readKeyFile(r.newKeyFile)
+		if err != nil {
+			if r.changesPassword() {
+				seal.Wipe(next.Password)
+			}
+			return seal.Secret{}, err
+		}
+		next.KeyFile = kf
+	}
+	return next, nil
+}

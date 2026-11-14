@@ -2,7 +2,7 @@
 // File helpers: atomic writes, temp file tracking, signal cleanup
 // ============================================================================
 
-package main
+package seal
 
 import (
 	"fmt"
@@ -43,9 +43,9 @@ func removeTrackedTemps() {
 
 var signalOnce sync.Once
 
-// installSignalCleanup removes in-flight temp files when the process is
+// InstallSignalCleanup removes in-flight temp files when the process is
 // interrupted (SIGINT) or terminated (SIGTERM). SIGKILL cannot be caught.
-func installSignalCleanup() {
+func InstallSignalCleanup() {
 	signalOnce.Do(func() {
 		ch := make(chan os.Signal, 1)
 		signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
