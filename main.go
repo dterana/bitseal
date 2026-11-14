@@ -67,13 +67,13 @@ func main() {
 }
 
 func encryptCommand(inputPath, outputPath string) error {
-	password, err := readPassword()
+	password, err := readNewPassword()
 	if err != nil {
 		return fmt.Errorf("failed to read password: %w", err)
 	}
 
-	cipher := NewCipherV1()
-	return cipher.EncryptFile(inputPath, outputPath, password)
+	manager := NewCipherManager()
+	return manager.EncryptFile(inputPath, outputPath, password)
 }
 
 func decryptCommand(inputPath, outputPath string) error {

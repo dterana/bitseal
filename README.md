@@ -9,7 +9,7 @@ Bitseal is a lightweight command-line utility for encrypting and decrypting file
 **Why Bitseal?**
 - 🔒 **Future-proof**: Version your encryption. Decrypt old files forever, even after updating algorithms
 - 🎯 **Simple**: Single-purpose tool focused on file encryption
-- 🔐 **Secure**: AES-256-GCM with PBKDF2 key derivation and hidden password input
+- 🔐 **Secure**: AES-256-GCM with Argon2id key derivation, per-file salts and hidden password input
 - 🚀 **Easy to extend**: Interface-based design makes adding new cipher versions trivial
 - 📦 **Minimal dependencies**: Uses only Go standard library and `golang.org/x/term` and `golang.org/x/crypto`
 
@@ -21,6 +21,8 @@ git clone https://github.com/dterana/bitseal.git
 cd bitseal
 go build -o bitseal
 ```
+
+Building requires Go 1.26 or newer (set by the `golang.org/x/crypto` dependency).
 
 ### Using go install
 ```bash
@@ -47,11 +49,15 @@ go install github.com/dterana/bitseal@latest
 ./bitseal decrypt -file secure.bin -out recovered.txt
 ```
 
+Decrypting a file that does not end in `.enc` requires `-out`, and the output path must differ from the input path. Bitseal refuses both cases instead of overwriting your encrypted file.
+
 ### Usage with pipes (non-interactive)
 ```bash
 # Password can be piped in (less secure, use only in scripts)
 echo "mypassword" | ./bitseal encrypt -file secret.txt
 ```
+
+When piped, the first line of stdin is the password. Spaces inside it are kept (`correct horse battery staple` works) and surrounding whitespace and the line ending are trimmed. Piped input is read once, so there is no confirmation prompt.
 
 ## How It Works
 
@@ -59,17 +65,24 @@ echo "mypassword" | ./bitseal encrypt -file secret.txt
 
 **Encryption**: AES-256 in GCM mode provides authenticated encryption, protecting against tampering and detecting corrupted files.
 
-**Key Derivation**: PBKDF2 with 100,000 iterations and SHA-256 converts your password into a cryptographic key, making brute-force attacks impractical.
+**Key Derivation**: New files (V2) use Argon2id (3 passes, 64 MiB, 4 threads) with a random 16-byte per-file salt. V1 files used PBKDF2-SHA256 (100,000 iterations) with a static salt and remain decryptable.
 
 **Random Nonce**: Each encryption uses a fresh random 12-byte nonce, so encrypting the same file twice produces completely different output.
 
-**Password Input**: Password is read with terminal echo disabled—nothing appears on screen as you type, protecting against shoulder surfing and terminal history.
+**Password Confirmation**: On a terminal, `encrypt` asks for the password twice so a typo cannot lock you out of your own file.
+
+**Atomic Writes**: Output is written to a temporary file in the destination directory and renamed into place, so a failed run never truncates or half-writes an existing file.
+
+**Password Input**: Password is read with terminal echo disabled, so nothing appears on screen as you type, protecting against shoulder surfing and terminal history.
 
 ### File Format
 
 ```
-[1 byte: version] [12 bytes: nonce] [rest: encrypted data]
+V2: [1 byte: version=2] [16 bytes: salt] [12 bytes: nonce] [rest: encrypted data]
+V1: [1 byte: version=1] [12 bytes: nonce] [rest: encrypted data]
 ```
+
+In V2 the version and salt are authenticated as GCM additional data, so tampering with the header makes decryption fail.
 
 The version byte allows Bitseal to automatically route decryption to the correct algorithm, even as new versions are added.
 
@@ -92,32 +105,41 @@ The codebase is organized for easy maintenance and extension:
 
 1. Create a new cipher implementation in `crypto.go`:
 ```go
-type CipherV2 struct {
+type CipherV3 struct {
     version byte
     // ... new fields
 }
 
-func (c *CipherV2) Version() byte { return 2 }
-func (c *CipherV2) Encrypt(plaintext, password []byte) ([]byte, error) { /* ... */ }
-func (c *CipherV2) Decrypt(ciphertext, password []byte) ([]byte, error) { /* ... */ }
+func (c *CipherV3) Version() byte { return 3 }
+func (c *CipherV3) Encrypt(plaintext, password []byte) ([]byte, error) { /* ... */ }
+func (c *CipherV3) Decrypt(ciphertext, password []byte) ([]byte, error) { /* ... */ }
 ```
 
 2. Register it in `cipher_manager.go`:
 ```go
 ciphers: map[byte]CipherVersion{
     1: NewCipherV1(),
-    2: NewCipherV2(),  // New!
+    2: NewCipherV2(),
+    3: NewCipherV3(),  // New!
 }
 ```
 
-That's it! Files encrypted with V1 will still decrypt automatically.
+3. Set `CurrentVersion` in `cipher_manager.go` to `3` so new files use it, and add a golden vector for the new version in `crypto_test.go`.
+
+That's it! Files encrypted with older versions will still decrypt automatically.
 
 ## Security Considerations
 
 - **Password Strength**: Use strong passwords (16+ characters with mixed case, numbers, symbols). Weak passwords are the weakest link.
-- **Salt**: Currently uses a static salt. For highest security in sensitive applications, consider per-file salts (requires storing them in the file or a separate database).
+- **Salt**: V2 uses a random per-file salt stored in the header. V1 files use a static salt; re-encrypt them with the current version to upgrade.
 - **File Permissions**: Output files are created with 0600 permissions (read/write only by owner).
 - **No Authentication**: The tool encrypts files but doesn't sign them. For authentication, consider using GPG signatures alongside encrypted files.
+
+## Limitations
+
+- **Whole file in memory**: Files are read and encrypted or decrypted in one piece, so memory use grows with file size. Encrypting a multi-gigabyte backup needs at least that much free RAM. Streaming would need a new cipher version with a chunked format.
+- **Interrupted runs**: Output is written to a `.bitseal-*.tmp` file next to the destination and renamed on success. If the process is killed mid-write (for example with SIGKILL), that temp file can remain and is safe to delete.
+- **Password in memory**: The password is held as a Go string and cannot be reliably wiped, so it may remain in process memory until exit.
 
 ## Examples
 
@@ -148,6 +170,15 @@ rm backup.tar.gz
 - Verify the file hasn't been corrupted or tampered with
 - Ensure you're using the correct version of Bitseal
 
+**"cannot infer output path: input does not end in .enc, use -out"**
+- Pass `-out <path>` to say where the decrypted file should go
+
+**"output path must differ from input path"**
+- Choose a different `-out`; Bitseal never writes over the file it is reading
+
+**"passwords do not match"**
+- The two prompts on `encrypt` differed; run the command again
+
 **"unsupported encryption version"**
 - Your encrypted file uses a newer encryption version than your Bitseal build
 - Update Bitseal to the latest version
@@ -160,8 +191,12 @@ rm backup.tar.gz
 
 ### Running tests
 ```bash
-go test ./...
+make test         # all tests (unit + end-to-end, builds the binary)
+make test-short   # skips the large-file cases
+make test-race    # with the race detector (slow: Argon2 uses 64 MiB per key)
 ```
+
+The suite covers both cipher versions (round trips, wrong passwords, tampering, truncation, golden vectors for on-disk compatibility), file operations (output naming, permissions, atomic writes, refusal to overwrite the input) and the compiled CLI end to end.
 
 ### Building
 ```bash
@@ -172,6 +207,9 @@ go build -o bitseal
 ```bash
 go fmt ./...
 ```
+
+### Continuous integration
+`.github/workflows/ci.yml` checks formatting, runs `go vet` and `go test -race` on Linux and macOS, and runs `govulncheck` against the dependencies on every push to `main` or `staging` and on every pull request.
 
 ## Contributing
 
