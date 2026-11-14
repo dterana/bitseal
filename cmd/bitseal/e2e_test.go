@@ -2,7 +2,7 @@ package main
 
 import (
 	"bytes"
-	"encoding/binary"
+	"github.com/dterana/bitseal/internal/testvectors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -107,15 +107,14 @@ func TestE2EEncryptDecryptRoundTripWithDefaultParameters(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 
-	enc := readFile(t, in+".enc")
-	h, err := parseHeaderV2(enc)
-	if err != nil {
-		t.Fatal(err)
+	// the binary must write the documented defaults into the header
+	info := mustBin(t, "", nil, "info", in+".enc").stdout
+	for _, want := range []string{"Version:   2", "time=3", "memory=64 MiB", "threads=4", "64 KiB chunks"} {
+		if !strings.Contains(info, want) {
+			t.Fatalf("info lacks %q:\n%s", want, info)
+		}
 	}
-	if h.kdf != defaultKDF || h.chunkLog2 != defaultChunkLog2 {
-		t.Fatalf("binary wrote %+v / chunk %d", h.kdf, h.chunkLog2)
-	}
-	if bytes.Contains(enc, []byte("top secret")) {
+	if bytes.Contains(readFile(t, in+".enc"), []byte("top secret")) {
 		t.Fatal("plaintext leaked into the encrypted file")
 	}
 
@@ -123,9 +122,6 @@ func TestE2EEncryptDecryptRoundTripWithDefaultParameters(t *testing.T) {
 	mustBin(t, "hunter2\n", nil, "decrypt", in+".enc")
 	if string(readFile(t, in)) != "top secret\n" {
 		t.Fatal("round trip mismatch")
-	}
-	if binary.BigEndian.Uint32(enc[3:]) != 3 {
-		t.Fatal("unexpected stored time cost")
 	}
 }
 
@@ -217,11 +213,11 @@ func TestE2EKeyFile(t *testing.T) {
 
 func TestE2EGoldenFilesDecryptWithDefaultParameters(t *testing.T) {
 	dir := t.TempDir()
-	for name, h := range map[string]string{"v1": goldenV1Hex, "v2": goldenV2Hex} {
+	for name, h := range map[string]string{"v1": testvectors.V1Hex, "v2": testvectors.V2Hex} {
 		in := filepath.Join(dir, name+".enc")
 		writeFile(t, in, mustHex(t, h))
-		r := mustBin(t, goldenPassword+"\n", nil, "decrypt", "-out", "-", in)
-		if r.stdout != goldenPlaintext {
+		r := mustBin(t, testvectors.Password+"\n", nil, "decrypt", "-out", "-", in)
+		if r.stdout != testvectors.Plaintext {
 			t.Fatalf("%s: stdout = %q", name, r.stdout)
 		}
 	}
@@ -230,20 +226,20 @@ func TestE2EGoldenFilesDecryptWithDefaultParameters(t *testing.T) {
 func TestE2ELegacyFileUpgradeWorkflow(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "legacy.enc")
-	writeFile(t, f, mustHex(t, goldenV1Hex))
+	writeFile(t, f, mustHex(t, testvectors.V1Hex))
 
 	r := mustBin(t, "", nil, "info", f)
 	if !strings.Contains(r.stdout, "Version:   1") || !strings.Contains(r.stdout, "bitseal rekey") {
 		t.Fatalf("%s", r.stdout)
 	}
 
-	mustBin(t, goldenPassword+"\n", nil, "rekey", f)
+	mustBin(t, testvectors.Password+"\n", nil, "rekey", f)
 
 	r = mustBin(t, "", nil, "info", f)
 	if !strings.Contains(r.stdout, "Version:   2") || !strings.Contains(r.stdout, "Argon2id") {
 		t.Fatalf("not upgraded:\n%s", r.stdout)
 	}
-	if r := mustBin(t, goldenPassword+"\n", nil, "decrypt", "-out", "-", f); r.stdout != goldenPlaintext {
+	if r := mustBin(t, testvectors.Password+"\n", nil, "decrypt", "-out", "-", f); r.stdout != testvectors.Plaintext {
 		t.Fatalf("content lost: %q", r.stdout)
 	}
 	noTempLeftovers(t, dir)
@@ -268,7 +264,7 @@ func TestE2ERekeyChangePasswordPiped(t *testing.T) {
 func TestE2EInfoOnGoldenFiles(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "v2.enc")
-	writeFile(t, f, mustHex(t, goldenV2Hex))
+	writeFile(t, f, mustHex(t, testvectors.V2Hex))
 	r := mustBin(t, "", nil, "info", f)
 	for _, want := range []string{"Version:   2", "time=3", "memory=64 MiB", "threads=4", "64 KiB chunks"} {
 		if !strings.Contains(r.stdout, want) {
