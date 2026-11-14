@@ -2,12 +2,13 @@ package cli
 
 import (
 	"bytes"
-	"github.com/dterana/bitseal/internal/seal"
-	"github.com/dterana/bitseal/internal/testvectors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dterana/bitseal/internal/seal"
+	"github.com/dterana/bitseal/internal/testvectors"
 )
 
 // These tests drive run() in-process with a cheap KDF (see captureStdio).

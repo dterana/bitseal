@@ -3,12 +3,13 @@ package cli
 import (
 	"bytes"
 	"errors"
-	"github.com/dterana/bitseal/internal/seal"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/dterana/bitseal/internal/seal"
 )
 
 func TestReadPasswordLine(t *testing.T) {

@@ -17,6 +17,7 @@ Versioned formats, so files you encrypt today still open after the algorithms ch
 [![KDF](https://img.shields.io/badge/KDF-Argon2id-2ea44f)](#security-features)
 [![Format](https://img.shields.io/badge/file%20format-v2%20%E2%80%A2%20reads%20v1-informational)](#file-format)
 [![Streaming](https://img.shields.io/badge/streaming-bounded%20memory-informational)](#security-features)
+[![Homebrew](https://img.shields.io/badge/homebrew-dterana%2Ftap-FBB040?logo=homebrew&logoColor=white)](https://github.com/dterana/homebrew-tap)
 [![Dependencies](https://img.shields.io/badge/direct%20dependencies-2-brightgreen)](go.mod)
 [![Tests](https://img.shields.io/badge/tests-unit%20%7C%20CLI%20%7C%20e2e%20%7C%20fuzz-brightgreen)](#development)
 
@@ -68,11 +69,14 @@ Bitseal is a lightweight command-line utility for encrypting and decrypting file
 
 ### Platforms
 
-| | Linux | macOS | Windows |
-|---|:---:|:---:|:---:|
-| Tested in CI | ✅ `ubuntu-latest` | ✅ `macos-latest` | not covered |
-| Release binaries | amd64, arm64 | amd64, arm64 | amd64, arm64 (untested) |
-| Build from source | Go 1.26+ | Go 1.26+ | Go 1.26+ |
+| | Linux | macOS |
+|---|:---:|:---:|
+| Tested in CI | ✅ `ubuntu-latest` | ✅ `macos-latest` |
+| Release binaries | amd64, arm64 | amd64, arm64 |
+| Homebrew | ✅ | ✅ |
+| Build from source | Go 1.26+ | Go 1.26+ |
+
+Windows is not supported for now: no binaries are built and the test suite does not run there.
 
 
 ### File formats
@@ -95,8 +99,26 @@ flowchart LR
 
 ## Installation
 
+### Homebrew (macOS and Linux)
+```bash
+brew tap dterana/tap
+brew trust --tap dterana/tap   # Homebrew 7 only loads third-party taps you have trusted
+brew install bitseal
+```
+The formula lives in [dterana/homebrew-tap](https://github.com/dterana/homebrew-tap) and follows the latest release automatically.
+
 ### From a release
-Download the archive for your platform from the [releases page](https://github.com/dterana/bitseal/releases), check it against `checksums.txt`, and put `bitseal` on your `PATH`.
+Download the archive for your platform from the [releases page](https://github.com/dterana/bitseal/releases), check it against `checksums.txt`, and put `bitseal` on your `PATH`. Releases are marked as pre-releases until 1.0.
+
+```bash
+shasum -a 256 -c checksums.txt --ignore-missing
+```
+
+Releases published after v0.3.0 also carry signed build provenance and one SBOM (`*.sbom.json`) per archive. Verify an archive was built by this repository's release workflow:
+
+```bash
+gh attestation verify bitseal_<version>_<os>_<arch>.tar.gz --repo dterana/bitseal
+```
 
 ### From source
 Building requires Go 1.26 or newer (set by the `golang.org/x/crypto` dependency).
@@ -304,7 +326,7 @@ The registry tests fail if a version is registered without a golden vector, if t
 - **Interrupted runs**: Output is written to a `.bitseal-*.tmp` file next to the destination and renamed on success. Ctrl+C and SIGTERM remove it, but if the process is killed with SIGKILL the temp file can remain and is safe to delete.
 - **Buffered stdout decrypt**: `decrypt -out -` and V1 files are held in memory while decrypting (V2 to a file streams with bounded memory).
 - **No directories**: Bitseal encrypts single files or streams. Archive directories first.
-- **Windows**: Release binaries are built for Windows, but the test suite does not run there.
+- **Windows**: not supported for now. No Windows binaries are built and the test suite does not run there.
 - **No Keychain integration**: Use `-password-file` or `-password-env` to feed a password from your secret store.
 
 ## Examples
@@ -361,12 +383,13 @@ The suite covers both cipher versions (round trips, wrong passwords, tampering a
 ```bash
 make build
 go fmt ./...
+make golangci     # golangci-lint, configured in .golangci.yml (must be installed)
 ```
 
 ### Continuous integration and releases
-`.github/workflows/ci.yml` checks formatting, runs `go vet` and `go test -race` with coverage on Linux and macOS, fuzzes each target briefly, and runs `govulncheck` on every push to `main` or `staging` and on every pull request.
+`.github/workflows/ci.yml` checks formatting, runs `go vet` and `go test -race` with coverage on Linux and macOS, runs `golangci-lint`, fuzzes each target briefly (retrying once to absorb a known Go fuzzer flake), and runs `govulncheck` on every push to `main` or `staging` and on every pull request. Dependabot keeps Go modules and GitHub Actions current through pull requests to `staging`.
 
-Pushing a tag like `v0.1.0` runs `.github/workflows/release.yml`, which tests and publishes binaries with GoReleaser (`.goreleaser.yaml`).
+Pushing a tag like `v0.4.0` runs `.github/workflows/release.yml`, which tests, builds the Linux and macOS archives with GoReleaser (`.goreleaser.yaml`), generates an SBOM per archive, publishes a pre-release and attaches signed build provenance attestations. Running the workflow by hand builds a snapshot instead, to validate the release configuration without publishing anything.
 
 ## Issues and pull requests
 

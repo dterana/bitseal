@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/binary"
-	"github.com/dterana/bitseal/internal/testvectors"
 	"io"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/dterana/bitseal/internal/testvectors"
 )
 
 func TestCipherVersionBytes(t *testing.T) {

@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bitseal: file encryption that outlives its algorithms</title>
+<meta name="description" content="Bitseal is a command-line tool that encrypts files with AES-256-GCM and Argon2id. Every file records its format version, so files you seal today still open after the algorithms change.">
+<meta property="og:title" content="Bitseal">
+<meta property="og:description" content="File encryption for the command line. Every file records its format, so old files keep opening.">
+<meta name="theme-color" content="#0b1c26">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23d9a441'/%3E%3Ccircle cx='16' cy='16' r='8' fill='none' stroke='%230b1c26' stroke-width='3'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --abyss:#0b1c26;
+  --deep:#10293a;
+  --tide:#1b4257;
+  --mist:#8fb0bf;
+  --foam:#e8f0f3;
+  --brass:#d9a441;
+  --brass-soft:rgba(217,164,65,.14);
+  --ok:#6fd3b4;
+  --display:"Bricolage Grotesque",system-ui,sans-serif;
+  --body:"Instrument Sans",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+  --gutter:clamp(20px,5vw,72px);
+  --max:1160px;
+}
+*{box-sizing:border-box;margin:0}
+html{scroll-behavior:smooth;background:var(--abyss)}
+body{background:var(--abyss);color:var(--foam);font:400 1.0625rem/1.65 var(--body);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--brass);outline-offset:3px;border-radius:4px}
+code,pre,.mono{font-family:var(--mono)}
+.wrap{max-width:var(--max);margin-inline:auto;padding-inline:var(--gutter)}
+h1,h2,h3{font-family:var(--display);line-height:1.04;letter-spacing:-.025em;font-weight:800}
+h2{font-size:clamp(2rem,4.6vw,3.6rem);max-width:16ch}
+h3{font-size:1.25rem;letter-spacing:-.01em;font-weight:600}
+p{max-width:62ch;color:#c4d6de}
+.muted{color:var(--mist)}
+
+/* nav */
+nav{position:fixed;inset:0 0 auto 0;z-index:20;display:flex;justify-content:space-between;align-items:center;padding:16px var(--gutter);background:linear-gradient(var(--abyss),transparent)}
+.logo{display:flex;gap:10px;align-items:center;font:800 1.2rem var(--display);text-decoration:none;letter-spacing:-.02em}
+.logo i{width:20px;height:20px;border-radius:50%;background:var(--brass);position:relative}
+.logo i::after{content:"";position:absolute;inset:5px;border-radius:50%;border:2.5px solid var(--abyss)}
+nav ul{display:flex;gap:26px;list-style:none;padding:0;font-size:.95rem}
+nav a.link{text-decoration:none;color:var(--mist)}
+nav a.link:hover{color:var(--foam)}
+@media(max-width:620px){nav ul li:not(:last-child){display:none}}
+
+/* hero */
+.hero{position:relative;min-height:100svh;display:grid;align-items:center;padding:120px 0 80px;overflow:hidden}
+.rain{position:absolute;inset:-20% 0;display:flex;justify-content:space-around;pointer-events:none;font:400 .85rem/1.9 var(--mono);color:var(--tide);user-select:none}
+.rain div{white-space:pre;will-change:transform;opacity:.55}
+.rain div:nth-child(even){opacity:.3}
+.hero::after{content:"";position:absolute;inset:0;background:radial-gradient(70% 60% at 30% 45%,transparent,var(--abyss) 85%);pointer-events:none}
+.hero .wrap{position:relative;z-index:2;display:grid;grid-template-columns:1.15fr .85fr;gap:clamp(32px,6vw,80px);align-items:center}
+.hero .wrap>*{min-width:0}
+@media(max-width:900px){.hero .wrap{grid-template-columns:minmax(0,1fr)}}
+.hero h1{font-size:clamp(2.8rem,7.4vw,6rem)}
+.hero .lede{margin-top:26px;font-size:1.2rem;color:var(--foam);max-width:34ch}
+.install{margin-top:34px;display:flex;flex-wrap:wrap;gap:12px;align-items:stretch}
+.install .cmd{flex:0 0 auto}
+@media(min-width:901px){.hero .install{flex-direction:column;align-items:flex-start}.hero .cmd{width:max-content;max-width:none}.hero .cmd span{white-space:nowrap}}
+.cmd{display:flex;align-items:center;gap:14px;background:var(--deep);border:1px solid var(--tide);border-radius:10px;padding:12px 14px 12px 18px;font:500 .9rem var(--mono);color:var(--foam);max-width:100%}
+.cmd span{overflow-wrap:anywhere;font-size:.84rem;line-height:1.5}
+.cmd b{color:var(--brass);font-weight:500}
+button{font:inherit;cursor:pointer}
+.copy{background:transparent;border:1px solid var(--tide);color:var(--mist);border-radius:6px;padding:4px 10px;font:500 .8rem var(--body);flex:none}
+.copy:hover{color:var(--foam);border-color:var(--mist)}
+.btn{display:inline-flex;align-items:center;padding:12px 20px;border-radius:10px;background:var(--brass);color:#1a1405;font-weight:600;text-decoration:none}
+.btn:hover{background:#e6b655}
+
+/* hexdump hero */
+.dump{background:rgba(16,41,58,.82);backdrop-filter:blur(6px);border:1px solid var(--tide);border-radius:14px;padding:22px 22px 18px;font:400 .88rem/1.9 var(--mono);box-shadow:0 30px 80px rgba(0,0,0,.4);transform:translateY(calc(var(--y,0) * -.06px))}
+.dump .bar{display:flex;gap:7px;margin-bottom:14px}
+.dump .bar i{width:10px;height:10px;border-radius:50%;background:var(--tide)}
+.dump .row{display:flex;gap:18px;color:var(--mist);white-space:pre}
+.dump .off{color:var(--tide)}
+.dump .v{color:var(--abyss);background:var(--brass);border-radius:3px;padding:0 3px;animation:pulse 3.6s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(217,164,65,0);filter:brightness(.85)}50%{box-shadow:0 0 0 7px rgba(217,164,65,.28),0 0 18px 2px rgba(217,164,65,.45);filter:brightness(1.15)}}
+.dump .note{margin-top:14px;padding-top:14px;border-top:1px dashed var(--tide);font:400 .9rem/1.5 var(--body);color:var(--foam)}
+.dump .note b{color:var(--brass)}
+.dump .asc{color:var(--tide)}
+@media(max-width:520px){.dump{font-size:.7rem}.dump .asc{display:none}}
+
+/* sections */
+section{position:relative}
+.block{padding:clamp(90px,14vw,170px) 0}
+.block.light{background:var(--foam);color:var(--abyss)}
+.block.light p{color:#34505e}
+.block.light .muted{color:#4d6a78}
+.intro{display:grid;grid-template-columns:1fr 1fr;gap:clamp(24px,5vw,80px);align-items:end;margin-bottom:64px}
+@media(max-width:800px){.intro{grid-template-columns:1fr}}
+
+/* routing schema */
+.route{position:relative;display:grid;grid-template-columns:1fr 150px 1fr;align-items:stretch;gap:0;margin-top:24px}
+@media(max-width:800px){.route{grid-template-columns:1fr;gap:18px}.hub{display:none}}
+.files{display:grid;grid-template-rows:repeat(3,1fr);gap:14px}
+.file{align-items:center;background:#fff;border:1.5px solid #c3d4dc;border-radius:12px;padding:14px 18px;font:500 .9rem var(--mono);display:flex;justify-content:space-between;gap:12px;opacity:0;transform:translateX(-30px);transition:opacity .6s,transform .6s}
+.file small{font:400 .8rem var(--body);color:#4d6a78;align-self:center}
+.file .b{background:var(--abyss);color:var(--brass);padding:0 6px;border-radius:4px}
+.route.on .file{opacity:1;transform:none}
+.route.on .file:nth-child(2){transition-delay:.15s}.route.on .file:nth-child(3){transition-delay:.3s}.route.on .file:nth-child(4){transition-delay:.45s}
+.decoders{display:grid;grid-template-rows:repeat(3,1fr);gap:14px}
+.hub{position:relative}
+.hub svg{position:absolute;inset:0;width:100%;height:100%}
+.dec{display:flex;flex-direction:column;justify-content:center;border-radius:12px;padding:14px 18px;border:1.5px solid #c3d4dc;background:#fff;opacity:0;transition:opacity .6s .5s}
+.dec strong{display:block;font:600 1rem var(--display)}
+.dec span{font-size:.88rem;color:#4d6a78}
+.dec.good{border-color:#2d8f73}
+.dec.bad{border-style:dashed}
+.route.on .dec{opacity:1}
+.hub path{fill:none;stroke-width:3;stroke-dasharray:7 7;animation:flow 1.2s linear infinite;vector-effect:non-scaling-stroke}
+.hub .l1{stroke:var(--c1)}.hub .l2{stroke:var(--c2)}.hub .l3{stroke:var(--c3)}
+.gate{position:absolute;left:50%;top:0;bottom:0;width:44px;margin-left:-22px;border-radius:22px;background:var(--abyss);color:var(--brass);display:grid;place-items:center;box-shadow:0 0 0 5px rgba(217,164,65,.18)}
+.gate span{writing-mode:vertical-rl;transform:rotate(180deg);font:600 .8rem var(--mono);white-space:nowrap;letter-spacing:.04em}
+.r1{--c:var(--c1)}.r2{--c:var(--c2)}.r3{--c:var(--c3)}
+.file.r1,.file.r2,.file.r3{border-color:var(--c);border-width:2px}
+.file .b{background:var(--c)!important;color:var(--abyss)!important}
+.dec.r1,.dec.r2,.dec.r3{border-color:var(--c);border-width:2px}
+.route{--c1:#2d8f73;--c2:#c98f1f;--c3:#b5483c}
+@keyframes flow{to{stroke-dashoffset:-24}}
+.promise{margin-top:56px;display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(20px,4vw,56px)}
+@media(max-width:800px){.promise{grid-template-columns:1fr}}
+.promise p{margin-top:8px;font-size:1rem}
+
+/* anatomy: sticky scroll */
+.anatomy{background:var(--deep)}
+.anatomy .track{height:420vh;position:relative}
+.anatomy .stick{position:sticky;top:0;min-height:100svh;display:flex;flex-direction:column;justify-content:center;gap:40px;padding:90px 0 40px}
+.map{display:flex;width:100%;height:84px;border-radius:12px;overflow:hidden;border:1px solid var(--tide)}
+.seg{flex:var(--w) 0 0;min-width:0;display:grid;place-items:center;font:500 .72rem var(--mono);color:var(--mist);background:var(--abyss);border-right:1px solid var(--tide);transition:background .35s,color .35s,flex-basis .35s;cursor:pointer;overflow:hidden;border-top:0;border-bottom:0;border-left:0}
+.seg:last-child{border-right:0}
+.seg.on{background:var(--brass);color:var(--abyss);font-weight:500}
+.seg.done{background:var(--tide);color:var(--foam)}
+.rule{display:flex;font:400 .72rem var(--mono);color:var(--tide);margin-top:-30px;padding-inline:2px;justify-content:space-between}
+.detail{display:grid;grid-template-columns:auto 1fr;gap:clamp(20px,4vw,56px);align-items:start;min-height:210px}
+.detail .big{font:800 clamp(3.5rem,9vw,7rem)/.9 var(--display);color:var(--brass);letter-spacing:-.04em;min-width:2.2ch}
+.detail h3{font-size:clamp(1.5rem,3vw,2.1rem);margin-bottom:10px}
+.detail p{min-height:5.2em}
+.progress{height:3px;background:var(--abyss);border-radius:2px;overflow:hidden}
+.progress i{display:block;height:100%;width:calc(var(--p,0) * 100%);background:var(--brass)}
+@media(max-width:700px){.map{height:64px}.seg{font-size:.55rem}.detail{grid-template-columns:1fr}.rule{display:none}}
+
+/* pipeline */
+.pipe{display:grid;grid-template-columns:repeat(5,1fr);gap:0;margin-top:70px;counter-reset:s;position:relative}
+.step{position:relative;padding:0 22px 0 0}
+.step::before{counter-increment:s;content:counter(s);display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:var(--abyss);color:var(--brass);font:600 1rem var(--display);position:relative;z-index:1}
+.step::after{content:"";position:absolute;top:19px;left:38px;right:0;height:2px;background:repeating-linear-gradient(90deg,#8fb0bf 0 6px,transparent 6px 12px)}
+.step:last-child::after{display:none}
+.step h3{margin:18px 0 6px;font-size:1.1rem}
+.step p{font-size:.94rem;line-height:1.55}
+.step code{font-size:.82rem;background:rgba(11,28,38,.08);padding:1px 6px;border-radius:4px}
+@media(max-width:900px){.pipe{grid-template-columns:1fr;gap:30px}.step::after{top:38px;bottom:-30px;left:18px;right:auto;width:2px;height:auto;background:repeating-linear-gradient(#8fb0bf 0 6px,transparent 6px 12px)}.step{padding:0 0 0 56px}.step::before{position:absolute;left:0;top:0}.step h3{margin-top:0}}
+
+/* terminal */
+.term{margin-top:56px;border:1px solid var(--tide);border-radius:14px;overflow:hidden;background:#071720}
+.tabs{display:flex;gap:2px;background:var(--deep);padding:8px 8px 0;overflow-x:auto}
+.tabs button{background:transparent;border:0;color:var(--mist);padding:10px 16px;border-radius:8px 8px 0 0;font:500 .9rem var(--mono);white-space:nowrap}
+.tabs button[aria-selected=true]{background:#071720;color:var(--foam)}
+.tabs button:hover{color:var(--foam)}
+.screen{padding:24px;font:400 .9rem/1.8 var(--mono);min-height:260px;overflow-x:auto;white-space:pre;color:#b5cbd4}
+.screen .p{color:var(--brass)}
+.screen .c{color:var(--foam)}
+.screen .o{color:var(--ok)}
+.screen .d{color:var(--mist)}
+.caret{display:inline-block;width:.6em;height:1.1em;background:var(--brass);vertical-align:-.2em;animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* facts */
+.facts{display:grid;grid-template-columns:1fr 1fr;gap:0 clamp(30px,6vw,90px);margin-top:56px}
+@media(max-width:800px){.facts{grid-template-columns:1fr}}
+.fact{display:grid;grid-template-columns:11ch 1fr;gap:20px;padding:22px 0;border-top:1px solid #c3d4dc}
+.fact dt{font:600 1rem var(--display);padding-top:2px}
+.fact dd{color:#34505e;font-size:1rem}
+.honest{margin-top:70px;padding:28px 30px;border-left:4px solid var(--brass);background:#fff;border-radius:0 12px 12px 0;max-width:780px}
+.honest h3{margin-bottom:6px}
+
+/* get */
+.get{text-align:left}
+.get h2{max-width:14ch}
+.get .install{margin-top:36px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:clamp(24px,5vw,80px);margin-top:50px}
+@media(max-width:800px){.cols{grid-template-columns:1fr}}
+.cols pre{background:var(--deep);border:1px solid var(--tide);border-radius:12px;padding:20px;font-size:.88rem;line-height:1.8;overflow-x:auto;color:#b5cbd4}
+.cols h3{margin-bottom:12px}
+footer{border-top:1px solid var(--tide);padding:34px 0 50px;color:var(--mist);font-size:.92rem}
+footer .wrap{display:flex;flex-wrap:wrap;gap:12px 32px;justify-content:space-between}
+footer a{text-decoration:none}footer a:hover{color:var(--foam)}
+
+@media(prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  .file,.dec{opacity:1;transform:none}
+  .rain div{transform:none!important}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="logo" href="#top" aria-label="Bitseal home"><i></i>bitseal</a>
+  <ul>
+    <li><a class="link" href="#format">Format</a></li>
+    <li><a class="link" href="#sealing">How it seals</a></li>
+    <li><a class="link" href="#use">Usage</a></li>
+    <li><a class="link" href="https://github.com/dterana/bitseal">GitHub</a></li>
+  </ul>
+</nav>
+
+<header class="hero" id="top">
+  <div class="rain" id="rain" aria-hidden="true"></div>
+  <div class="wrap">
+    <div>
+      <h1>Files you seal today still open in ten years.</h1>
+      <p class="lede">Bitseal encrypts files from the command line and writes the format version into every one. When the algorithms change, your old files keep opening.</p>
+      <div class="install">
+        <div class="cmd"><span><b>$</b> go install github.com/dterana/bitseal/cmd/bitseal@latest</span><button class="copy" data-copy="go install github.com/dterana/bitseal/cmd/bitseal@latest">Copy</button></div>
+        <a class="btn" href="https://github.com/dterana/bitseal/releases" id="dl">Download release</a>
+      </div>
+    </div>
+    <div class="dump" aria-label="Hex dump of the first bytes of a Bitseal file">
+      <div class="bar"><i></i><i></i><i></i></div>
+      <div class="row"><span class="off">0000</span><span><span class="v">02</span> 00 10 00 00 00 03 00 01</span><span class="asc">.........</span></div>
+      <div class="row"><span class="off">0009</span><span>00 00 04 9c 5e 21 b7 08 d3</span><span class="asc">....^!...</span></div>
+      <div class="row"><span class="off">0012</span><span>f4 6a 0c e1 77 2b 90 a5 3d</span><span class="asc">.j..w+..=</span></div>
+      <div class="row"><span class="off">001b</span><span>c8 14 e6 5f 02 91 ab 7c 33</span><span class="asc">..._...|3</span></div>
+      <div class="note">The first byte is the <b>version</b>. A reader picks its decoder from that byte alone, and refuses anything it does not know.</div>
+    </div>
+  </div>
+</header>
+
+<section class="block light" id="format">
+  <div class="wrap">
+    <div class="intro">
+      <h2>One byte decides how a file is read.</h2>
+      <p>Most tools quietly change their defaults between releases, and last year's backup stops decrypting. Bitseal keeps every format it has ever written and picks the right one from the first byte of the file.</p>
+    </div>
+
+    <div class="route" id="route">
+      <div class="files">
+        <div class="file r1"><span><span class="b">01</span> notes.txt.enc</span><small>older format</small></div>
+        <div class="file r2"><span><span class="b">02</span> backup.tar.enc</span><small>current format</small></div>
+        <div class="file r3"><span><span class="b">09</span> from-the-future.enc</span><small>newer than this build</small></div>
+      </div>
+      <div class="hub" aria-hidden="true">
+        <svg viewBox="0 0 150 300" preserveAspectRatio="none">
+          <path class="l1" d="M0 50 L150 50"/><path class="l2" d="M0 150 L150 150"/><path class="l3" d="M0 250 L150 250"/>
+        </svg>
+        <div class="gate"><span>read byte 0</span></div>
+      </div>
+      <div class="decoders">
+        <div class="dec good r1"><strong>Version 1 decoder</strong><span>PBKDF2 and AES-GCM. Reads, and rekey upgrades it.</span></div>
+        <div class="dec good r2"><strong>Version 2 decoder</strong><span>Argon2id and chunked AES-GCM. The current format.</span></div>
+        <div class="dec bad r3"><strong>Clear refusal</strong><span>"unsupported encryption version". It never guesses.</span></div>
+      </div>
+    </div>
+
+    <div class="promise">
+      <div><h3>Old files keep opening</h3><p>Golden test vectors for every shipped version run in CI. A change that breaks an old file fails the build.</p></div>
+      <div><h3>New versions are cheap</h3><p>A format is one file that registers itself. The manager and CLI never change when a version is added.</p></div>
+      <div><h3>Upgrades are explicit</h3><p><code>bitseal rekey</code> moves a file to the current format in place, atomically, when you choose to.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="anatomy" id="anatomy">
+  <div class="track" id="track">
+    <div class="stick">
+      <div class="wrap" style="width:100%">
+        <h2 style="margin-bottom:12px">Anatomy of a sealed file</h2>
+        <p class="muted" style="margin-bottom:34px">Scroll, or select a field. Everything a reader needs is in the first 35 bytes.</p>
+        <div class="map" id="map" role="tablist" aria-label="Version 2 header fields"></div>
+        <div class="rule" aria-hidden="true"><span>byte 0</span><span>35</span></div>
+        <div class="detail" aria-live="polite">
+          <div class="big" id="dBig">02</div>
+          <div><h3 id="dTitle"></h3><p id="dText"></p></div>
+        </div>
+        <div class="progress"><i id="prog"></i></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="block light" id="sealing">
+  <div class="wrap">
+    <div class="intro">
+      <h2>From password to sealed file.</h2>
+      <p>Your password is stretched into a key that is slow to guess, then the file is encrypted in authenticated chunks, so large files stream with bounded memory.</p>
+    </div>
+    <div class="pipe">
+      <div class="step"><h3>Gather secrets</h3><p>A password, plus an optional key file hashed with SHA-256 as a second factor.</p></div>
+      <div class="step"><h3>Stretch</h3><p><code>Argon2id</code> with a random 16 byte salt per file. Costs live in the header.</p></div>
+      <div class="step"><h3>Chunk</h3><p>The file is cut into blocks of up to 2<sup>c</sup> bytes, so memory stays flat.</p></div>
+      <div class="step"><h3>Encrypt</h3><p>Each chunk gets <code>AES-256-GCM</code> with its own nonce and an authentication tag.</p></div>
+      <div class="step"><h3>Write atomically</h3><p>Output goes to a temp file and is renamed on success. A crash never leaves half a file.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="use">
+  <div class="wrap">
+    <div class="intro" style="margin-bottom:0">
+      <h2>Made for scripts and pipes.</h2>
+      <p>Data goes to stdout. Prompts and errors go to stderr. Exit codes are real. Passwords can come from a prompt, a file, an environment variable or a pipe.</p>
+    </div>
+    <div class="term">
+      <div class="tabs" role="tablist" id="tabs">
+        <button role="tab" aria-selected="true" data-t="enc">encrypt</button>
+        <button role="tab" aria-selected="false" data-t="pipe">pipe</button>
+        <button role="tab" aria-selected="false" data-t="rekey">rekey</button>
+        <button role="tab" aria-selected="false" data-t="key">key file</button>
+      </div>
+      <div class="screen" id="screen" aria-live="polite"></div>
+    </div>
+  </div>
+</section>
+
+<section class="block light" id="facts">
+  <div class="wrap">
+    <h2>The specifics.</h2>
+    <dl class="facts">
+      <div class="fact"><dt>Cipher</dt><dd>AES-256-GCM, authenticated per chunk, so tampering is detected.</dd></div>
+      <div class="fact"><dt>Key derivation</dt><dd>Argon2id with a per-file salt. Version 1 files use PBKDF2-SHA256.</dd></div>
+      <div class="fact"><dt>Memory</dt><dd>Streaming format. Large files use bounded memory and flow through pipes.</dd></div>
+      <div class="fact"><dt>Dependencies</dt><dd>Go standard library, <code>x/crypto</code> and <code>x/term</code>. Nothing else.</dd></div>
+      <div class="fact"><dt>Platforms</dt><dd>Linux and macOS on amd64 and arm64, tested in CI. Windows builds are untested.</dd></div>
+      <div class="fact"><dt>Tests</dt><dd>Unit, CLI, end to end and fuzz tests, plus golden vectors for every format.</dd></div>
+    </dl>
+    <div class="honest">
+      <h3>Pre-1.0 and not independently audited.</h3>
+      <p>Bitseal is young. The format is documented and tested, but it has not had a third-party security review. Read the <a href="https://github.com/dterana/bitseal/blob/main/SECURITY.md">security policy</a> before you rely on it for anything critical.</p>
+    </div>
+  </div>
+</section>
+
+<section class="block get" id="get">
+  <div class="wrap">
+    <h2>Seal your first file.</h2>
+    <div class="install">
+      <div class="cmd"><span><b>$</b> go install github.com/dterana/bitseal/cmd/bitseal@latest</span><button class="copy" data-copy="go install github.com/dterana/bitseal/cmd/bitseal@latest">Copy</button></div>
+      <a class="btn" href="https://github.com/dterana/bitseal">View on GitHub</a>
+    </div>
+    <div class="cols">
+      <div><h3>Or build from source</h3>
+<pre>git clone https://github.com/dterana/bitseal.git
+cd bitseal
+make build</pre></div>
+      <div><h3>Or read the format spec</h3>
+        <p>The on-disk layout is written so you can build a compatible reader without reading the Go code.</p>
+        <p style="margin-top:12px"><a href="https://github.com/dterana/bitseal/blob/main/docs/format.md" style="color:var(--brass)">docs/format.md</a></p></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>Bitseal is MIT licensed. <span id="ver"></span></span>
+    <span><a href="https://github.com/dterana/bitseal">Source</a> &nbsp; <a href="https://github.com/dterana/bitseal/releases">Releases</a> &nbsp; <a href="https://github.com/dterana/bitseal/blob/main/SECURITY.md">Security</a></span>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* hex rain for the hero parallax */
+  var rain = document.getElementById('rain'), cols = [];
+  var n = Math.max(4, Math.min(9, Math.floor(innerWidth / 170)));
+  for (var i = 0; i < n; i++) {
+    var d = document.createElement('div'), t = '';
+    for (var r = 0; r < 46; r++) {
+      var line = '';
+      for (var k = 0; k < 3; k++) line += ('0' + Math.floor(Math.random() * 256).toString(16)).slice(-2) + ' ';
+      t += line + '\n';
+    }
+    d.textContent = t; d.dataset.s = (0.04 + (i % 4) * 0.07).toFixed(2);
+    rain.appendChild(d); cols.push(d);
+  }
+
+  /* scroll loop: parallax + anatomy progress */
+  var track = document.getElementById('track'), prog = document.getElementById('prog');
+  var dump = document.querySelector('.dump');
+  var ticking = false;
+  function frame(){
+    ticking = false;
+    var y = scrollY;
+    if (!reduce) {
+      cols.forEach(function(c){ c.style.transform = 'translate3d(0,' + (-y * c.dataset.s) + 'px,0)'; });
+      dump.style.setProperty('--y', y);
+    }
+    var rect = track.getBoundingClientRect();
+    var p = Math.min(1, Math.max(0, -rect.top / (rect.height - innerHeight)));
+    prog.parentNode.style.setProperty('--p', p);
+    prog.style.setProperty('--p', p);
+    setField(Math.min(fields.length - 1, Math.floor(p * fields.length)), false);
+  }
+  addEventListener('scroll', function(){ if (!ticking) { ticking = true; requestAnimationFrame(frame); } }, {passive:true});
+
+  /* anatomy */
+  var fields = [
+    {k:'version', n:1, big:'02', t:'Version', d:'Tells a reader which decoder to use. Unknown values are refused with a clear error, never guessed.'},
+    {k:'flags', n:1, big:'00', t:'Flags', d:'Bit 0 means a key file is required, so a missing key file gets a clear message. Reserved bits must be zero or the file is refused.'},
+    {k:'chunk', n:1, big:'2ᶜ', t:'Chunk size', d:'An exponent: each chunk holds 2 to the power c bytes. Readers accept 4 to 24, so a hostile header cannot ask for gigabytes.'},
+    {k:'time', n:4, big:'t', t:'Argon2id time cost', d:'The number of passes, stored per file. A file always opens with the cost it was written with, whatever today’s defaults are.'},
+    {k:'mem', n:4, big:'m', t:'Argon2id memory cost', d:'Memory in KiB, capped at 1 GiB when reading. This is what makes guessing passwords expensive on GPUs.'},
+    {k:'par', n:1, big:'p', t:'Parallelism', d:'How many lanes Argon2id uses. Also stored in the header and checked against the same safety limits.'},
+    {k:'salt', n:16, big:'16', t:'Salt', d:'16 random bytes per file. Two files sealed with the same password still get different keys.'},
+    {k:'nonce', n:7, big:'7', t:'Nonce prefix', d:'Random per file. Each chunk appends a counter to it, so no nonce is ever reused under one key.'}
+  ];
+  var map = document.getElementById('map'), segs = [];
+  fields.forEach(function(f, i){
+    var b = document.createElement('button');
+    b.className = 'seg'; b.style.setProperty('--w', f.n); b.setAttribute('role', 'tab');
+    b.textContent = f.n > 2 ? f.k : '';
+    b.title = f.t + ', ' + f.n + (f.n === 1 ? ' byte' : ' bytes');
+    b.setAttribute('aria-label', f.t + ', ' + f.n + (f.n === 1 ? ' byte' : ' bytes'));
+    b.addEventListener('click', function(){
+      setField(i, true);
+      var r = track.getBoundingClientRect(), span = r.height - innerHeight;
+      var target = scrollY + r.top + span * ((i + .5) / fields.length);
+      scrollTo({top: target, behavior: reduce ? 'auto' : 'smooth'});
+    });
+    map.appendChild(b); segs.push(b);
+  });
+  var cur = -1;
+  function setField(i){
+    if (i === cur) return; cur = i;
+    segs.forEach(function(s, j){ s.classList.toggle('on', j === i); s.classList.toggle('done', j < i); s.setAttribute('aria-selected', j === i); });
+    var f = fields[i];
+    document.getElementById('dBig').textContent = f.big;
+    document.getElementById('dTitle').textContent = f.t + ' · ' + f.n + (f.n === 1 ? ' byte' : ' bytes');
+    document.getElementById('dText').textContent = f.d;
+  }
+  setField(0);
+
+  /* routing schema reveal */
+  var route = document.getElementById('route');
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver(function(es, o){ es.forEach(function(e){ if (e.isIntersecting) { route.classList.add('on'); o.disconnect(); } }); }, {threshold:.35}).observe(route);
+  } else route.classList.add('on');
+
+  /* terminal demo */
+  var demos = {
+    enc: [['$ bitseal encrypt notes.txt','c'],['Password: ','d'],['Confirm password: ','d'],['notes.txt -> notes.txt.enc','o'],['','d'],['$ bitseal info notes.txt.enc','c'],['Version: 2 (current)','o'],['KDF: Argon2id','o'],['Key file: not required','o'],['','d'],['$ bitseal decrypt notes.txt.enc','c'],['notes.txt.enc -> notes.txt','o']],
+    pipe: [['$ tar czf - ./project | bitseal encrypt \\','c'],['    -password-file pw -file - -out project.tgz.enc','c'],['','d'],['$ bitseal decrypt -password-file pw \\','c'],['    -file project.tgz.enc -out - | tar xzf -','c'],['','d'],['Prompts and errors go to stderr.','d'],['stdout carries data only, so pipelines stay clean.','d']],
+    rekey: [['$ bitseal info old.enc','c'],['Version: 1 (legacy)','o'],['','d'],['$ bitseal rekey old.enc','c'],['old.enc upgraded to version 2','o'],['','d'],['$ bitseal rekey -change-password a.enc','c'],['Current password: ','d'],['New password: ','d'],['a.enc rekeyed','o']],
+    key: [['$ bitseal encrypt -keyfile ~/.keys/seal.key notes.txt','c'],['notes.txt -> notes.txt.enc','o'],['','d'],['$ bitseal decrypt notes.txt.enc','c'],['error: this file requires a key file (use -keyfile)','d'],['','d'],['$ bitseal decrypt -keyfile ~/.keys/seal.key notes.txt.enc','c'],['notes.txt.enc -> notes.txt','o']]
+  };
+  var screen = document.getElementById('screen'), tabs = document.getElementById('tabs'), timer;
+  function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+  function play(key){
+    clearTimeout(timer);
+    var lines = demos[key], li = 0, html = '';
+    function paint(done){
+      screen.innerHTML = html + (done ? '' : '') + '<span class="caret"></span>';
+    }
+    function nextLine(){
+      if (li >= lines.length) { paint(); return; }
+      var L = lines[li++], cls = L[1], txt = L[0];
+      if (reduce || cls !== 'c') { html += '<span class="' + cls + '">' + esc(txt) + '</span>\n'; paint(); timer = setTimeout(nextLine, reduce ? 0 : 160); return; }
+      var i = 0;
+      (function type(){
+        var typed = txt.slice(0, i);
+        var prefix = typed.charAt(0) === '$' ? '<span class="p">$</span>' + esc(typed.slice(1)) : esc(typed);
+        screen.innerHTML = html + '<span class="c">' + prefix + '</span><span class="caret"></span>';
+        if (i++ < txt.length) timer = setTimeout(type, 16);
+        else { html += '<span class="c">' + (txt.charAt(0) === '$' ? '<span class="p">$</span>' + esc(txt.slice(1)) : esc(txt)) + '</span>\n'; timer = setTimeout(nextLine, 260); }
+      })();
+    }
+    nextLine();
+  }
+  tabs.addEventListener('click', function(e){
+    var b = e.target.closest('button'); if (!b) return;
+    [].forEach.call(tabs.children, function(x){ x.setAttribute('aria-selected', x === b); });
+    play(b.dataset.t);
+  });
+  var started = false;
+  new IntersectionObserver(function(es){ es.forEach(function(e){ if (e.isIntersecting && !started) { started = true; play('enc'); } }); }, {threshold:.3}).observe(document.querySelector('.term'));
+
+  /* copy buttons */
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click', function(){
+      var done = function(){ b.textContent = 'Copied'; setTimeout(function(){ b.textContent = 'Copy'; }, 1600); };
+      if (navigator.clipboard) navigator.clipboard.writeText(b.dataset.copy).then(done, function(){});
+    });
+  });
+
+  /* latest release, best effort */
+  fetch('https://api.github.com/repos/dterana/bitseal/releases/latest').then(function(r){ return r.ok ? r.json() : null; }).then(function(j){
+    if (!j || !j.tag_name) return;
+    document.getElementById('ver').textContent = 'Latest release: ' + j.tag_name + '.';
+    document.getElementById('dl').textContent = 'Download ' + j.tag_name;
+    document.getElementById('dl').href = j.html_url;
+  }).catch(function(){});
+
+  frame();
+})();
+</script>
+</body>
+</html>
