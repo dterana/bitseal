@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   # Always runs, so every required check below still reports a status. Jobs
-  # stay present and green for site-only changes; they just skip their steps.
+  # stay present and green for site and docs-only changes; they just skip their steps.
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -28,8 +28,8 @@ jobs:
           if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
             echo "code=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          # Anything outside the website and its deploy workflow needs the full CI.
-          other=$(git diff --name-only "$base" HEAD | grep -vE '^(site/|\.github/workflows/pages\.yml$)' || true)
+          # Anything outside the website, docs and Markdown files needs the full CI.
+          other=$(git diff --name-only "$base" HEAD | grep -vE '^(site/|docs/|\.github/workflows/pages\.yml$)|\.md$' || true)
           if [ -n "$other" ]; then
             echo "code=true" >> "$GITHUB_OUTPUT"
           else
