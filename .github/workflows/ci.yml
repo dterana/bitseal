@@ -9,7 +9,36 @@ permissions:
   contents: read
 
 jobs:
+  # Always runs, so every required check below still reports a status. Jobs
+  # stay present and green for site-only changes; they just skip their steps.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          base="${PR_BASE:-$PUSH_BEFORE}"
+          if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "code=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # Anything outside the website and its deploy workflow needs the full CI.
+          other=$(git diff --name-only "$base" HEAD | grep -vE '^(site/|\.github/workflows/pages\.yml$)' || true)
+          if [ -n "$other" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+            echo "Only the website changed, skipping Go checks."
+          fi
+
   test:
+    needs: changes
     strategy:
       fail-fast: false
       matrix:
@@ -17,47 +46,66 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+        if: needs.changes.outputs.code == 'true'
       - uses: actions/setup-go@v7
+        if: needs.changes.outputs.code == 'true'
         with:
           go-version-file: go.mod
       - name: Check formatting
+        if: needs.changes.outputs.code == 'true'
         run: test -z "$(gofmt -l .)"
       - name: Vet
+        if: needs.changes.outputs.code == 'true'
         run: go vet ./...
       - name: Test
+        if: needs.changes.outputs.code == 'true'
         run: go test -race -count=1 -coverprofile=cover.out ./...
       - name: Coverage
+        if: needs.changes.outputs.code == 'true'
         run: go tool cover -func=cover.out | tail -1
 
   lint:
+    needs: changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        if: needs.changes.outputs.code == 'true'
       - uses: actions/setup-go@v7
+        if: needs.changes.outputs.code == 'true'
         with:
           go-version-file: go.mod
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        if: needs.changes.outputs.code == 'true'
         with:
           version: v2.15.0
 
   fuzz:
+    needs: changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        if: needs.changes.outputs.code == 'true'
       - uses: actions/setup-go@v7
+        if: needs.changes.outputs.code == 'true'
         with:
           go-version-file: go.mod
       - name: Fuzz (smoke)
+        if: needs.changes.outputs.code == 'true'
         run: make fuzz FUZZTIME=15s
 
   vulncheck:
+    needs: changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        if: needs.changes.outputs.code == 'true'
       - uses: actions/setup-go@v7
+        if: needs.changes.outputs.code == 'true'
         with:
           go-version-file: go.mod
       - name: Install govulncheck
+        if: needs.changes.outputs.code == 'true'
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
       - name: Scan dependencies
+        if: needs.changes.outputs.code == 'true'
         run: govulncheck ./...
