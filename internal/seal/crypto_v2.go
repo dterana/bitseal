@@ -21,6 +21,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -213,15 +214,15 @@ func (c *CipherV2) EncryptStream(dst io.Writer, src io.Reader, secret Secret) er
 	for counter := uint32(0); ; counter++ {
 		n, err := io.ReadFull(br, plain)
 		last := false
-		switch err {
-		case nil:
+		switch {
+		case err == nil:
 			// A full chunk is the last one only if nothing follows it.
-			if _, perr := br.Peek(1); perr == io.EOF {
+			if _, perr := br.Peek(1); errors.Is(perr, io.EOF) {
 				last = true
 			} else if perr != nil {
 				return fmt.Errorf("failed to read input: %w", perr)
 			}
-		case io.EOF, io.ErrUnexpectedEOF:
+		case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
 			last = true
 		default:
 			return fmt.Errorf("failed to read input: %w", err)
@@ -243,7 +244,7 @@ func (c *CipherV2) EncryptStream(dst io.Writer, src io.Reader, secret Secret) er
 func (c *CipherV2) DecryptStream(dst io.Writer, src io.Reader, secret Secret) error {
 	header := make([]byte, headerSizeV2)
 	if _, err := io.ReadFull(src, header); err != nil {
-		if err == io.EOF || err == io.ErrUnexpectedEOF {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 			return fmt.Errorf("invalid encrypted file format (too short)")
 		}
 		return fmt.Errorf("failed to read input: %w", err)
@@ -275,16 +276,16 @@ func (c *CipherV2) DecryptStream(dst io.Writer, src io.Reader, secret Secret) er
 	for counter := uint32(0); ; counter++ {
 		n, err := io.ReadFull(br, sealed)
 		last := false
-		switch err {
-		case nil:
-			if _, perr := br.Peek(1); perr == io.EOF {
+		switch {
+		case err == nil:
+			if _, perr := br.Peek(1); errors.Is(perr, io.EOF) {
 				last = true
 			} else if perr != nil {
 				return fmt.Errorf("failed to read input: %w", perr)
 			}
-		case io.ErrUnexpectedEOF:
+		case errors.Is(err, io.ErrUnexpectedEOF):
 			last = true
-		case io.EOF:
+		case errors.Is(err, io.EOF):
 			return fmt.Errorf("invalid encrypted file format (too short)")
 		default:
 			return fmt.Errorf("failed to read input: %w", err)

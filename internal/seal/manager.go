@@ -113,10 +113,10 @@ func (m *Manager) openInput(path string) (io.Reader, func(), error) {
 	}
 	fi, err := f.Stat()
 	if err == nil && fi.IsDir() {
-		f.Close()
+		_ = f.Close()
 		return nil, nil, fmt.Errorf("failed to read file: %s is a directory (archive it first, e.g. with tar)", path)
 	}
-	return f, func() { f.Close() }, nil
+	return f, func() { _ = f.Close() }, nil
 }
 
 // writeOutput runs fn against the destination. Files are written atomically.
@@ -172,7 +172,7 @@ func (m *Manager) openCipher(src io.Reader) (CipherVersion, *bufio.Reader, error
 	br := bufio.NewReader(src)
 	first, err := br.Peek(1)
 	if err != nil {
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return nil, nil, fmt.Errorf("invalid encrypted file format (empty)")
 		}
 		return nil, nil, fmt.Errorf("failed to read file: %w", err)
@@ -263,12 +263,12 @@ func (m *Manager) RekeyFile(inputPath, outputPath string, oldSecret, newSecret S
 		decErrc := make(chan error, 1)
 		go func() {
 			err := decryptTo(oldCipher, pw, br, oldSecret)
-			pw.CloseWithError(err)
+			_ = pw.CloseWithError(err)
 			decErrc <- err
 		}()
 
 		encErr := sc.EncryptStream(w, pr, newSecret)
-		pr.CloseWithError(encErr)
+		_ = pr.CloseWithError(encErr)
 		decErr := <-decErrc
 
 		switch {

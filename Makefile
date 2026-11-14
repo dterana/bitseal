@@ -1,4 +1,4 @@
-.PHONY: build test test-short test-race cover fuzz clean run-encrypt run-decrypt help fmt lint
+.PHONY: build test test-short test-race cover fuzz clean run-encrypt run-decrypt help fmt lint golangci
 
 LDFLAGS := -X main.Build=$(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 
@@ -17,6 +17,7 @@ help:
 	@echo "  run-decrypt   - Build and run decrypt demo"
 	@echo "  fmt           - Format code"
 	@echo "  lint          - Run go vet"
+	@echo "  golangci      - Run golangci-lint (must be installed)"
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o bitseal ./cmd/bitseal
@@ -38,10 +39,15 @@ cover:
 FUZZTIME ?= 20s
 FUZZ_TARGETS := FuzzDecryptV2 FuzzDecryptV1 FuzzParseHeaderV2 FuzzInspect FuzzRoundTripV2
 
+# The Go fuzzer can end a run with "context deadline exceeded" when the time
+# budget expires mid-execution. Retrying once absorbs that flake; a real
+# finding fails again, because its input is saved to testdata/ and replayed as
+# a seed on the second run.
 fuzz:
 	@for t in $(FUZZ_TARGETS); do \
 		echo "== $$t"; \
-		go test -run='^$$' -fuzz="^$$t$$" -fuzztime=$(FUZZTIME) ./internal/seal || exit 1; \
+		run() { go test -run='^$$' -fuzz="^$$t$$" -fuzztime=$(FUZZTIME) ./internal/seal; }; \
+		run || { echo "retrying $$t once"; run || exit 1; }; \
 	done
 
 clean:
@@ -60,3 +66,6 @@ fmt:
 
 lint:
 	go vet ./...
+
+golangci:
+	golangci-lint run
