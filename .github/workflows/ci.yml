@@ -25,7 +25,19 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Test
-        run: go test -race -count=1 ./...
+        run: go test -race -count=1 -coverprofile=cover.out ./...
+      - name: Coverage
+        run: go tool cover -func=cover.out | tail -1
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Fuzz (smoke)
+        run: make fuzz FUZZTIME=15s
 
   vulncheck:
     runs-on: ubuntu-latest

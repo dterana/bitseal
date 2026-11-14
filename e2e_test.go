@@ -2,13 +2,18 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
+
+// End-to-end tests run the compiled binary with the real Argon2 parameters,
+// real pipes and real exit codes.
 
 var binPath string
 
@@ -31,341 +36,324 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// run executes the built binary with stdin piped (non-terminal), so the
-// password is read through the plain-input fallback.
-func run(t *testing.T, stdin string, args ...string) (string, int) {
+type binResult struct {
+	stdout, stderr string
+	code           int
+}
+
+// runBin executes the binary with stdin piped (non-terminal) and optional
+// extra environment variables.
+func runBin(t *testing.T, stdin string, env []string, args ...string) binResult {
 	t.Helper()
 	cmd := exec.Command(binPath, args...)
 	cmd.Stdin = strings.NewReader(stdin)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &out
-	err := cmd.Run()
+	cmd.Env = append(os.Environ(), env...)
+	var out, errb bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errb
 	code := 0
-	if err != nil {
+	if err := cmd.Run(); err != nil {
 		ee, ok := err.(*exec.ExitError)
 		if !ok {
 			t.Fatalf("failed to run binary: %v", err)
 		}
 		code = ee.ExitCode()
 	}
-	return out.String(), code
+	return binResult{out.String(), errb.String(), code}
 }
 
-func TestE2EVersionFlag(t *testing.T) {
-	for _, flag := range []string{"-version", "--version"} {
-		out, code := run(t, "", flag)
-		if code != 0 || !strings.Contains(out, "Bitseal v"+Version) {
-			t.Fatalf("%s: code=%d out=%q", flag, code, out)
+func mustBin(t *testing.T, stdin string, env []string, args ...string) binResult {
+	t.Helper()
+	r := runBin(t, stdin, env, args...)
+	if r.code != 0 {
+		t.Fatalf("%v: code=%d stderr=%q", args, r.code, r.stderr)
+	}
+	return r
+}
+
+func TestE2EVersion(t *testing.T) {
+	for _, flag := range []string{"version", "-version", "--version"} {
+		r := runBin(t, "", nil, flag)
+		if r.code != 0 || !strings.Contains(r.stdout, "Bitseal v"+Version) {
+			t.Fatalf("%s: %+v", flag, r)
 		}
 	}
 }
 
-func TestE2ENoArgsShowsUsage(t *testing.T) {
-	out, code := run(t, "")
-	if code != 1 || !strings.Contains(out, "Usage:") {
-		t.Fatalf("code=%d out=%q", code, out)
+func TestE2EUsageAndUnknownCommand(t *testing.T) {
+	if r := runBin(t, "", nil); r.code != 1 || !strings.Contains(r.stderr, "Usage:") {
+		t.Fatalf("%+v", r)
+	}
+	if r := runBin(t, "", nil, "frobnicate"); r.code != 1 || !strings.Contains(r.stderr, "Unknown command") {
+		t.Fatalf("%+v", r)
+	}
+	if r := runBin(t, "pw\n", nil, "encrypt"); r.code != 1 || !strings.Contains(r.stderr, "no input file") {
+		t.Fatalf("%+v", r)
+	}
+	if r := runBin(t, "", nil, "encrypt", "-bogus"); r.code != 2 {
+		t.Fatalf("flag errors must exit 2: %+v", r)
+	}
+	if r := runBin(t, "", nil, "help"); r.code != 0 || !strings.Contains(r.stdout, "rekey") {
+		t.Fatalf("%+v", r)
 	}
 }
 
-func TestE2EUnknownCommand(t *testing.T) {
-	out, code := run(t, "", "frobnicate")
-	if code != 1 || !strings.Contains(out, "Unknown command") {
-		t.Fatalf("code=%d out=%q", code, out)
-	}
-}
-
-func TestE2EMissingFileFlag(t *testing.T) {
-	for _, cmd := range []string{"encrypt", "decrypt"} {
-		out, code := run(t, "pw\n", cmd)
-		if code != 1 || !strings.Contains(out, "-file flag required") {
-			t.Fatalf("%s: code=%d out=%q", cmd, code, out)
-		}
-	}
-}
-
-func TestE2EEncryptDecryptRoundTrip(t *testing.T) {
+func TestE2EEncryptDecryptRoundTripWithDefaultParameters(t *testing.T) {
 	dir := t.TempDir()
 	in := filepath.Join(dir, "notes.txt")
 	writeFile(t, in, []byte("top secret\n"))
 
-	out, code := run(t, "hunter2\n", "encrypt", "-file", in)
-	if code != 0 || !strings.Contains(out, "encrypted successfully") {
-		t.Fatalf("encrypt: code=%d out=%q", code, out)
+	r := mustBin(t, "hunter2\n", nil, "encrypt", in)
+	if r.stdout != "" || !strings.Contains(r.stderr, "Encrypted") {
+		t.Fatalf("%+v", r)
 	}
+
 	enc := readFile(t, in+".enc")
-	if enc[0] != 2 {
-		t.Fatalf("CLI must write V2, got version %d", enc[0])
+	h, err := parseHeaderV2(enc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.kdf != defaultKDF || h.chunkLog2 != defaultChunkLog2 {
+		t.Fatalf("binary wrote %+v / chunk %d", h.kdf, h.chunkLog2)
 	}
 	if bytes.Contains(enc, []byte("top secret")) {
-		t.Fatal("plaintext leaked into encrypted file")
+		t.Fatal("plaintext leaked into the encrypted file")
 	}
 
 	os.Remove(in)
-	out, code = run(t, "hunter2\n", "decrypt", "-file", in+".enc")
-	if code != 0 || !strings.Contains(out, "decrypted successfully") {
-		t.Fatalf("decrypt: code=%d out=%q", code, out)
-	}
+	mustBin(t, "hunter2\n", nil, "decrypt", in+".enc")
 	if string(readFile(t, in)) != "top secret\n" {
 		t.Fatal("round trip mismatch")
 	}
-}
-
-func TestE2ECustomOutputPaths(t *testing.T) {
-	dir := t.TempDir()
-	in := filepath.Join(dir, "a.txt")
-	enc := filepath.Join(dir, "sealed.bin")
-	dec := filepath.Join(dir, "restored.txt")
-	writeFile(t, in, []byte("payload"))
-
-	if _, code := run(t, "pw\n", "encrypt", "-file", in, "-out", enc); code != 0 {
-		t.Fatal("encrypt failed")
-	}
-	if _, code := run(t, "pw\n", "decrypt", "-file", enc, "-out", dec); code != 0 {
-		t.Fatal("decrypt failed")
-	}
-	if string(readFile(t, dec)) != "payload" {
-		t.Fatal("mismatch")
+	if binary.BigEndian.Uint32(enc[3:]) != 3 {
+		t.Fatal("unexpected stored time cost")
 	}
 }
 
-func TestE2EPasswordWithoutTrailingNewline(t *testing.T) {
+func TestE2EWrongPasswordAndNoLeftovers(t *testing.T) {
 	dir := t.TempDir()
 	in := filepath.Join(dir, "a.txt")
 	writeFile(t, in, []byte("payload"))
-	if _, code := run(t, "pw", "encrypt", "-file", in); code != 0 {
-		t.Fatal("encrypt failed with EOF-terminated password")
-	}
-	os.Remove(in)
-	if _, code := run(t, "pw", "decrypt", "-file", in+".enc"); code != 0 {
-		t.Fatal("decrypt failed with EOF-terminated password")
-	}
-	if string(readFile(t, in)) != "payload" {
-		t.Fatal("mismatch")
-	}
-}
+	mustBin(t, "right\n", nil, "encrypt", in)
 
-func TestE2EWrongPassword(t *testing.T) {
-	dir := t.TempDir()
-	in := filepath.Join(dir, "a.txt")
-	writeFile(t, in, []byte("payload"))
-	run(t, "right\n", "encrypt", "-file", in)
-
-	out, code := run(t, "wrong\n", "decrypt", "-file", in+".enc", "-out", filepath.Join(dir, "o"))
-	if code != 1 || !strings.Contains(out, "decryption failed") {
-		t.Fatalf("code=%d out=%q", code, out)
+	out := filepath.Join(dir, "o")
+	r := runBin(t, "wrong\n", nil, "decrypt", "-out", out, in+".enc")
+	if r.code != 1 || !strings.Contains(r.stderr, "decryption failed") {
+		t.Fatalf("%+v", r)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "o")); err == nil {
+	if _, err := os.Stat(out); err == nil {
 		t.Fatal("plaintext written despite wrong password")
 	}
+	noTempLeftovers(t, dir)
 }
 
-func TestE2EEmptyPasswordRejected(t *testing.T) {
+func TestE2EStdoutCarriesOnlyData(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join(dir, "a.txt")
+	writeFile(t, in, []byte("exact bytes\n"))
+	mustBin(t, "pw\n", nil, "encrypt", in)
+
+	r := mustBin(t, "pw\n", nil, "decrypt", "-out", "-", in+".enc")
+	if r.stdout != "exact bytes\n" {
+		t.Fatalf("stdout must hold exactly the plaintext, got %q", r.stdout)
+	}
+	if !strings.Contains(r.stderr, "Enter password") {
+		t.Fatalf("the prompt belongs on stderr: %q", r.stderr)
+	}
+}
+
+func TestE2EPipeline(t *testing.T) {
+	dir := t.TempDir()
+	pf := filepath.Join(dir, "pw")
+	os.WriteFile(pf, []byte("pipeline pw\n"), 0600)
+
+	sealed := mustBin(t, "streamed through a pipe", nil, "encrypt", "-password-file", pf, "-file", "-").stdout
+	if len(sealed) == 0 || sealed[0] != 2 {
+		t.Fatal("encrypt - must write an encrypted file to stdout")
+	}
+	r := mustBin(t, sealed, nil, "decrypt", "-password-file", pf, "-file", "-")
+	if r.stdout != "streamed through a pipe" {
+		t.Fatalf("stdout = %q", r.stdout)
+	}
+}
+
+func TestE2EPasswordFileAndEnv(t *testing.T) {
 	dir := t.TempDir()
 	in := filepath.Join(dir, "a.txt")
 	writeFile(t, in, []byte("payload"))
-	for _, stdin := range []string{"\n", ""} {
-		out, code := run(t, stdin, "encrypt", "-file", in)
-		if code != 1 {
-			t.Fatalf("stdin=%q: expected exit 1, got %d (%q)", stdin, code, out)
-		}
-		if _, err := os.Stat(in + ".enc"); err == nil {
-			t.Fatal("no output may be written with an empty password")
-		}
+	pf := filepath.Join(dir, "pw")
+	os.WriteFile(pf, []byte("correct horse battery staple\n"), 0600)
+
+	mustBin(t, "", nil, "encrypt", "-password-file", pf, in)
+	// the same passphrase through the environment opens it
+	r := mustBin(t, "", []string{"BITSEAL_E2E_PW=correct horse battery staple"}, "decrypt", "-password-env", "BITSEAL_E2E_PW", "-out", "-", in+".enc")
+	if r.stdout != "payload" {
+		t.Fatalf("stdout = %q", r.stdout)
+	}
+	if r := runBin(t, "", nil, "decrypt", "-password-env", "BITSEAL_E2E_NOT_SET", in+".enc"); r.code != 1 {
+		t.Fatalf("%+v", r)
 	}
 }
 
-func TestE2EMissingInputFile(t *testing.T) {
-	dir := t.TempDir()
-	for _, cmd := range []string{"encrypt", "decrypt"} {
-		out, code := run(t, "pw\n", cmd, "-file", filepath.Join(dir, "nope"))
-		if code != 1 || !strings.Contains(out, "failed to read file") {
-			t.Fatalf("%s: code=%d out=%q", cmd, code, out)
-		}
-	}
-}
-
-func TestE2EDecryptCorruptedFile(t *testing.T) {
+func TestE2EKeyFile(t *testing.T) {
 	dir := t.TempDir()
 	in := filepath.Join(dir, "a.txt")
 	writeFile(t, in, []byte("payload"))
-	run(t, "pw\n", "encrypt", "-file", in)
+	pf := filepath.Join(dir, "pw")
+	os.WriteFile(pf, []byte("pw\n"), 0600)
+	kf := filepath.Join(dir, "key.bin")
+	writeFile(t, kf, pattern(64))
 
-	enc := readFile(t, in+".enc")
-	enc[len(enc)-1] ^= 0xFF
-	bad := filepath.Join(dir, "bad.enc")
-	writeFile(t, bad, enc)
-
-	out, code := run(t, "pw\n", "decrypt", "-file", bad, "-out", filepath.Join(dir, "o"))
-	if code != 1 || !strings.Contains(out, "decryption failed") {
-		t.Fatalf("code=%d out=%q", code, out)
+	mustBin(t, "", nil, "encrypt", "-password-file", pf, "-keyfile", kf, in)
+	if r := runBin(t, "", nil, "decrypt", "-password-file", pf, "-out", "-", in+".enc"); r.code != 1 || !strings.Contains(r.stderr, "requires a key file") {
+		t.Fatalf("%+v", r)
+	}
+	if r := mustBin(t, "", nil, "decrypt", "-password-file", pf, "-keyfile", kf, "-out", "-", in+".enc"); r.stdout != "payload" {
+		t.Fatalf("stdout = %q", r.stdout)
+	}
+	if r := mustBin(t, "", nil, "info", in+".enc"); !strings.Contains(r.stdout, "Key file:  required") {
+		t.Fatalf("%s", r.stdout)
 	}
 }
 
-func TestE2EDecryptUnsupportedVersion(t *testing.T) {
+func TestE2EGoldenFilesDecryptWithDefaultParameters(t *testing.T) {
 	dir := t.TempDir()
-	in := filepath.Join(dir, "future.enc")
-	writeFile(t, in, append([]byte{9}, make([]byte, 64)...))
-	out, code := run(t, "pw\n", "decrypt", "-file", in)
-	if code != 1 || !strings.Contains(out, "unsupported encryption version: 9") {
-		t.Fatalf("code=%d out=%q", code, out)
+	for name, h := range map[string]string{"v1": goldenV1Hex, "v2": goldenV2Hex} {
+		in := filepath.Join(dir, name+".enc")
+		writeFile(t, in, mustHex(t, h))
+		r := mustBin(t, goldenPassword+"\n", nil, "decrypt", "-out", "-", in)
+		if r.stdout != goldenPlaintext {
+			t.Fatalf("%s: stdout = %q", name, r.stdout)
+		}
 	}
 }
 
-func TestE2EDecryptLegacyV1File(t *testing.T) {
+func TestE2ELegacyFileUpgradeWorkflow(t *testing.T) {
 	dir := t.TempDir()
-	in := filepath.Join(dir, "legacy.enc")
-	writeFile(t, in, mustHex(t, goldenV1Hex))
-	out := filepath.Join(dir, "legacy.txt")
-	if _, code := run(t, "golden-pw\n", "decrypt", "-file", in, "-out", out); code != 0 {
-		t.Fatal("legacy V1 file must still decrypt via the CLI")
+	f := filepath.Join(dir, "legacy.enc")
+	writeFile(t, f, mustHex(t, goldenV1Hex))
+
+	r := mustBin(t, "", nil, "info", f)
+	if !strings.Contains(r.stdout, "Version:   1") || !strings.Contains(r.stdout, "bitseal rekey") {
+		t.Fatalf("%s", r.stdout)
 	}
-	if string(readFile(t, out)) != "golden plaintext" {
-		t.Fatal("mismatch")
+
+	mustBin(t, goldenPassword+"\n", nil, "rekey", f)
+
+	r = mustBin(t, "", nil, "info", f)
+	if !strings.Contains(r.stdout, "Version:   2") || !strings.Contains(r.stdout, "Argon2id") {
+		t.Fatalf("not upgraded:\n%s", r.stdout)
 	}
+	if r := mustBin(t, goldenPassword+"\n", nil, "decrypt", "-out", "-", f); r.stdout != goldenPlaintext {
+		t.Fatalf("content lost: %q", r.stdout)
+	}
+	noTempLeftovers(t, dir)
 }
 
-func TestE2EDecryptGoldenV2File(t *testing.T) {
+func TestE2ERekeyChangePasswordPiped(t *testing.T) {
 	dir := t.TempDir()
-	in := filepath.Join(dir, "v2.enc")
-	writeFile(t, in, mustHex(t, goldenV2Hex))
-	out := filepath.Join(dir, "v2.txt")
-	if _, code := run(t, "golden-pw\n", "decrypt", "-file", in, "-out", out); code != 0 {
-		t.Fatal("golden V2 file must decrypt via the CLI")
+	in := filepath.Join(dir, "a.txt")
+	writeFile(t, in, []byte("payload"))
+	mustBin(t, "old\n", nil, "encrypt", in)
+
+	// current password on the first line, new password on the second
+	mustBin(t, "old\nnew\n", nil, "rekey", "-change-password", in+".enc")
+	if r := runBin(t, "old\n", nil, "decrypt", "-out", "-", in+".enc"); r.code != 1 {
+		t.Fatal("the old password must stop working")
 	}
-	if string(readFile(t, out)) != "golden plaintext" {
-		t.Fatal("mismatch")
+	if r := mustBin(t, "new\n", nil, "decrypt", "-out", "-", in+".enc"); r.stdout != "payload" {
+		t.Fatalf("stdout = %q", r.stdout)
 	}
 }
 
-func TestE2ERandomizedOutputPerRun(t *testing.T) {
+func TestE2EInfoOnGoldenFiles(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "v2.enc")
+	writeFile(t, f, mustHex(t, goldenV2Hex))
+	r := mustBin(t, "", nil, "info", f)
+	for _, want := range []string{"Version:   2", "time=3", "memory=64 MiB", "threads=4", "64 KiB chunks"} {
+		if !strings.Contains(r.stdout, want) {
+			t.Fatalf("info lacks %q:\n%s", want, r.stdout)
+		}
+	}
+}
+
+func TestE2EDirectoryInputRefused(t *testing.T) {
+	dir := t.TempDir()
+	r := runBin(t, "pw\n", nil, "encrypt", dir)
+	if r.code != 1 || !strings.Contains(r.stderr, "is a directory") {
+		t.Fatalf("%+v", r)
+	}
+}
+
+func TestE2ELargeFile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("large file skipped in short mode")
+	}
+	dir := t.TempDir()
+	in := filepath.Join(dir, "blob")
+	data := pattern(3<<20 + 77)
+	writeFile(t, in, data)
+
+	mustBin(t, "pw\n", nil, "encrypt", in)
+	out := filepath.Join(dir, "blob.out")
+	mustBin(t, "pw\n", nil, "decrypt", "-out", out, in+".enc")
+	if !bytes.Equal(readFile(t, out), data) {
+		t.Fatal("round trip mismatch")
+	}
+	noTempLeftovers(t, dir)
+}
+
+func TestE2EOutputsDifferPerRun(t *testing.T) {
 	dir := t.TempDir()
 	in := filepath.Join(dir, "a.txt")
 	writeFile(t, in, []byte("same content"))
-	run(t, "pw\n", "encrypt", "-file", in, "-out", filepath.Join(dir, "1.enc"))
-	run(t, "pw\n", "encrypt", "-file", in, "-out", filepath.Join(dir, "2.enc"))
+	mustBin(t, "pw\n", nil, "encrypt", "-out", filepath.Join(dir, "1.enc"), in)
+	mustBin(t, "pw\n", nil, "encrypt", "-out", filepath.Join(dir, "2.enc"), in)
 	if bytes.Equal(readFile(t, filepath.Join(dir, "1.enc")), readFile(t, filepath.Join(dir, "2.enc"))) {
-		t.Fatal("two CLI encryptions must differ (salt and nonce)")
+		t.Fatal("two encryptions must differ (salt and nonce)")
 	}
 }
 
-func TestE2EBinaryAndLargeFile(t *testing.T) {
+// An interrupt in the middle of a write must remove the temp file and leave
+// no output behind.
+func TestE2ESigintRemovesTempFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("signals differ on windows")
+	}
 	dir := t.TempDir()
-	in := filepath.Join(dir, "blob")
-	if testing.Short() {
-		t.Skip("large file test skipped in short mode")
-	}
-	data := make([]byte, 3<<20)
-	for i := range data {
-		data[i] = byte(i * 31)
-	}
-	writeFile(t, in, data)
-	if _, code := run(t, "pw\n", "encrypt", "-file", in); code != 0 {
-		t.Fatal("encrypt failed")
-	}
-	out := filepath.Join(dir, "blob.out")
-	if _, code := run(t, "pw\n", "decrypt", "-file", in+".enc", "-out", out); code != 0 {
-		t.Fatal("decrypt failed")
-	}
-	if !bytes.Equal(readFile(t, out), data) {
-		t.Fatal("binary round trip mismatch")
-	}
-}
+	pf := filepath.Join(dir, "pw")
+	os.WriteFile(pf, []byte("pw\n"), 0600)
+	out := filepath.Join(dir, "o.enc")
 
-func TestE2EEnvFileUseCase(t *testing.T) {
-	// The genesis use case: an encrypted env file rendered into a config dir.
-	dir := t.TempDir()
-	src := filepath.Join(dir, "ngrok.yml")
-	writeFile(t, src, []byte("authtoken: abc123\n"))
-	if _, code := run(t, "pw\n", "encrypt", "-file", src); code != 0 {
-		t.Fatal("encrypt failed")
+	cmd := exec.Command(binPath, "encrypt", "-password-file", pf, "-file", "-", "-out", out)
+	stdinPipe, err := cmd.StdinPipe() // stays open, so the encrypt blocks mid-write
+	if err != nil {
+		t.Fatal(err)
 	}
-	os.Remove(src)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer stdinPipe.Close()
 
-	target := filepath.Join(dir, "config", "ngrok.yml")
-	os.MkdirAll(filepath.Dir(target), 0700)
-	if _, code := run(t, "pw\n", "decrypt", "-file", src+".enc", "-out", target); code != 0 {
-		t.Fatal("decrypt failed")
+	deadline := time.Now().Add(15 * time.Second)
+	for len(tempLeftovers(t, dir)) == 0 {
+		if time.Now().After(deadline) {
+			cmd.Process.Kill()
+			t.Fatal("temp file never appeared")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	if string(readFile(t, target)) != "authtoken: abc123\n" {
-		t.Fatal("mismatch")
-	}
-}
 
-func TestE2EPasswordWithSpaces(t *testing.T) {
-	dir := t.TempDir()
-	in := filepath.Join(dir, "a.txt")
-	writeFile(t, in, []byte("payload"))
-	pw := "correct horse battery staple"
-
-	if out, code := run(t, pw+"\n", "encrypt", "-file", in); code != 0 {
-		t.Fatalf("encrypt: code=%d out=%q", code, out)
+	if err := cmd.Process.Signal(os.Interrupt); err != nil {
+		t.Fatal(err)
 	}
-	// the same passphrase must open the file, and only its first word must not
-	if out, code := run(t, "correct\n", "decrypt", "-file", in+".enc", "-out", filepath.Join(dir, "x")); code != 1 {
-		t.Fatalf("first word alone must not decrypt: code=%d out=%q", code, out)
+	werr := cmd.Wait()
+	ee, ok := werr.(*exec.ExitError)
+	if !ok || ee.ExitCode() != 130 {
+		t.Fatalf("expected exit code 130, got %v", werr)
 	}
-	if out, code := run(t, pw+"\n", "decrypt", "-file", in+".enc", "-out", filepath.Join(dir, "y")); code != 0 {
-		t.Fatalf("decrypt: code=%d out=%q", code, out)
-	}
-	if string(readFile(t, filepath.Join(dir, "y"))) != "payload" {
-		t.Fatal("mismatch")
-	}
-}
-
-func TestE2EPasswordLineEndingsAndTrailingInput(t *testing.T) {
-	dir := t.TempDir()
-	in := filepath.Join(dir, "a.txt")
-	writeFile(t, in, []byte("payload"))
-	// CRLF and extra lines after the password must not change the password
-	if _, code := run(t, "pw\r\nignored\n", "encrypt", "-file", in); code != 0 {
-		t.Fatal("encrypt failed")
-	}
-	if _, code := run(t, "pw\n", "decrypt", "-file", in+".enc", "-out", filepath.Join(dir, "o")); code != 0 {
-		t.Fatal("password with CRLF should equal the plain password")
-	}
-}
-
-func TestE2EDecryptWithoutEncExtensionRequiresOut(t *testing.T) {
-	dir := t.TempDir()
-	in := filepath.Join(dir, "a.txt")
-	writeFile(t, in, []byte("payload"))
-	sealed := filepath.Join(dir, "sealed.bin")
-	if _, code := run(t, "pw\n", "encrypt", "-file", in, "-out", sealed); code != 0 {
-		t.Fatal("encrypt failed")
-	}
-	before := readFile(t, sealed)
-
-	out, code := run(t, "pw\n", "decrypt", "-file", sealed)
-	if code != 1 || !strings.Contains(out, "use -out") {
-		t.Fatalf("code=%d out=%q", code, out)
-	}
-	if !bytes.Equal(readFile(t, sealed), before) {
-		t.Fatal("encrypted file must not be modified")
-	}
-}
-
-func TestE2EOutputEqualsInputRefused(t *testing.T) {
-	dir := t.TempDir()
-	in := filepath.Join(dir, "a.txt")
-	writeFile(t, in, []byte("payload"))
-	out, code := run(t, "pw\n", "encrypt", "-file", in, "-out", in)
-	if code != 1 || !strings.Contains(out, "must differ") {
-		t.Fatalf("code=%d out=%q", code, out)
-	}
-	if string(readFile(t, in)) != "payload" {
-		t.Fatal("input was clobbered")
-	}
-}
-
-func TestE2ENoTempFilesLeftBehind(t *testing.T) {
-	dir := t.TempDir()
-	in := filepath.Join(dir, "a.txt")
-	writeFile(t, in, []byte("payload"))
-	run(t, "pw\n", "encrypt", "-file", in)
-	run(t, "wrong\n", "decrypt", "-file", in+".enc", "-out", filepath.Join(dir, "o"))
-	run(t, "pw\n", "decrypt", "-file", in+".enc", "-out", filepath.Join(dir, "o"))
-	if l := tempLeftovers(t, dir); len(l) != 0 {
-		t.Fatalf("temp files left behind: %v", l)
+	noTempLeftovers(t, dir)
+	if _, err := os.Stat(out); err == nil {
+		t.Fatal("output must not exist after an interrupt")
 	}
 }
