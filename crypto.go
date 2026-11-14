@@ -1,5 +1,5 @@
 // ============================================================================
-// Core cryptography logic
+// Core cryptography: shared types and the legacy V1 cipher
 // ============================================================================
 
 package main
@@ -11,8 +11,8 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
+	"io"
 
-	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/pbkdf2"
 )
 
@@ -20,23 +20,72 @@ const (
 	PBKDF2Iterations = 100000
 	KeySize          = 32 // 256-bit for AES-256
 	NonceSize        = 12 // GCM standard
-
-	SaltSizeV2      = 16
-	Argon2TimeV2    = 3
-	Argon2MemoryV2  = 64 * 1024 // KiB (64 MiB)
-	Argon2ThreadsV2 = 4
-	headerSizeV2    = 1 + SaltSizeV2 + NonceSize
-	gcmTagSize      = 16
+	gcmTagSize       = 16
 )
+
+// Secret is what unlocks a file: a password, and optionally a key file that
+// acts as a second factor.
+type Secret struct {
+	Password []byte
+	KeyFile  []byte
+}
+
+func (s Secret) hasKeyFile() bool { return len(s.KeyFile) > 0 }
+
+// material returns the bytes fed to the KDF. With a key file it is a fresh
+// slice (password || SHA-256(key file)) that the caller should wipe.
+func (s Secret) material() []byte {
+	if !s.hasKeyFile() {
+		return s.Password
+	}
+	sum := sha256.Sum256(s.KeyFile)
+	m := make([]byte, 0, len(s.Password)+sha256.Size)
+	m = append(m, s.Password...)
+	return append(m, sum[:]...)
+}
+
+// Wipe zeroes the secret's buffers. Best effort: copies made by the runtime
+// or by buffered readers cannot be reached.
+func (s Secret) Wipe() {
+	wipe(s.Password)
+	wipe(s.KeyFile)
+}
+
+func wipe(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
+}
+
+// FileInfo describes an encrypted file's format, read from its header alone.
+type FileInfo struct {
+	Version   byte
+	Cipher    string
+	KDF       string
+	KeyFile   bool
+	ChunkSize int // 0 when the file is a single authenticated block
+	Legacy    bool
+}
 
 // CipherVersion defines the interface for different encryption versions
 type CipherVersion interface {
 	Version() byte
-	Encrypt(plaintext, password []byte) ([]byte, error)
-	Decrypt(ciphertext, password []byte) ([]byte, error)
+	Encrypt(plaintext []byte, secret Secret) ([]byte, error)
+	Decrypt(ciphertext []byte, secret Secret) ([]byte, error)
+	// Inspect reads only the header from src and describes the format.
+	Inspect(src io.Reader) (FileInfo, error)
 }
 
-// CipherV1 implements AES-256-GCM with PBKDF2
+// StreamCipher is implemented by versions that can process data of any size
+// with bounded memory.
+type StreamCipher interface {
+	CipherVersion
+	EncryptStream(dst io.Writer, src io.Reader, secret Secret) error
+	DecryptStream(dst io.Writer, src io.Reader, secret Secret) error
+}
+
+// CipherV1 implements AES-256-GCM with PBKDF2 and a static salt (legacy,
+// decrypt only in practice).
 type CipherV1 struct {
 	version byte
 	salt    string
@@ -63,12 +112,16 @@ func (c *CipherV1) deriveKey(password []byte) []byte {
 	)
 }
 
-func (c *CipherV1) Encrypt(plaintext, password []byte) ([]byte, error) {
-	if len(password) == 0 {
+func (c *CipherV1) Encrypt(plaintext []byte, secret Secret) ([]byte, error) {
+	if len(secret.Password) == 0 {
 		return nil, fmt.Errorf("password cannot be empty")
 	}
+	if secret.hasKeyFile() {
+		return nil, fmt.Errorf("key files require encryption version 2")
+	}
 
-	key := c.deriveKey(password)
+	key := c.deriveKey(secret.Password)
+	defer wipe(key)
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -96,15 +149,19 @@ func (c *CipherV1) Encrypt(plaintext, password []byte) ([]byte, error) {
 	return output.Bytes(), nil
 }
 
-func (c *CipherV1) Decrypt(ciphertext, password []byte) ([]byte, error) {
-	if len(ciphertext) < 29 { // 1 (version) + 12 (nonce) + 16 (min GCM tag)
+func (c *CipherV1) Decrypt(ciphertext []byte, secret Secret) ([]byte, error) {
+	if len(ciphertext) < 1+NonceSize+gcmTagSize {
 		return nil, fmt.Errorf("invalid encrypted file format (too short)")
 	}
+	if secret.hasKeyFile() {
+		return nil, fmt.Errorf("this file was not encrypted with a key file")
+	}
 
-	key := c.deriveKey(password)
+	key := c.deriveKey(secret.Password)
+	defer wipe(key)
 
-	nonce := ciphertext[1:13]
-	encrypted := ciphertext[13:]
+	nonce := ciphertext[1 : 1+NonceSize]
+	encrypted := ciphertext[1+NonceSize:]
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -124,82 +181,18 @@ func (c *CipherV1) Decrypt(ciphertext, password []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-// CipherV2 implements AES-256-GCM with Argon2id and a random per-file salt
-type CipherV2 struct {
-	version byte
-}
-
-func NewCipherV2() *CipherV2 {
-	return &CipherV2{version: 2}
-}
-
-func (c *CipherV2) Version() byte {
-	return c.version
-}
-
-func (c *CipherV2) deriveKey(password, salt []byte) []byte {
-	return argon2.IDKey(password, salt, Argon2TimeV2, Argon2MemoryV2, Argon2ThreadsV2, KeySize)
-}
-
-func (c *CipherV2) newGCM(password, salt []byte) (cipher.AEAD, error) {
-	block, err := aes.NewCipher(c.deriveKey(password, salt))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create cipher: %w", err)
+func (c *CipherV1) Inspect(src io.Reader) (FileInfo, error) {
+	header := make([]byte, 1+NonceSize)
+	if _, err := io.ReadFull(src, header); err != nil {
+		return FileInfo{}, fmt.Errorf("invalid encrypted file format (too short)")
 	}
-	aesgcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GCM: %w", err)
+	if header[0] != c.version {
+		return FileInfo{}, fmt.Errorf("not a version 1 file")
 	}
-	return aesgcm, nil
-}
-
-func (c *CipherV2) Encrypt(plaintext, password []byte) ([]byte, error) {
-	if len(password) == 0 {
-		return nil, fmt.Errorf("password cannot be empty")
-	}
-
-	salt := make([]byte, SaltSizeV2)
-	if _, err := rand.Read(salt); err != nil {
-		return nil, fmt.Errorf("failed to generate salt: %w", err)
-	}
-	nonce := make([]byte, NonceSize)
-	if _, err := rand.Read(nonce); err != nil {
-		return nil, fmt.Errorf("failed to generate nonce: %w", err)
-	}
-
-	aesgcm, err := c.newGCM(password, salt)
-	if err != nil {
-		return nil, err
-	}
-
-	// Format: [version:1][salt:16][nonce:12][ciphertext]
-	// The version and salt are authenticated as additional data.
-	header := make([]byte, 0, headerSizeV2)
-	header = append(header, c.version)
-	header = append(header, salt...)
-	header = append(header, nonce...)
-
-	return aesgcm.Seal(header, nonce, plaintext, header[:1+SaltSizeV2]), nil
-}
-
-func (c *CipherV2) Decrypt(ciphertext, password []byte) ([]byte, error) {
-	if len(ciphertext) < headerSizeV2+gcmTagSize {
-		return nil, fmt.Errorf("invalid encrypted file format (too short)")
-	}
-
-	salt := ciphertext[1 : 1+SaltSizeV2]
-	nonce := ciphertext[1+SaltSizeV2 : headerSizeV2]
-	encrypted := ciphertext[headerSizeV2:]
-
-	aesgcm, err := c.newGCM(password, salt)
-	if err != nil {
-		return nil, err
-	}
-
-	plaintext, err := aesgcm.Open(nil, nonce, encrypted, ciphertext[:1+SaltSizeV2])
-	if err != nil {
-		return nil, fmt.Errorf("decryption failed (wrong password or corrupted file): %w", err)
-	}
-
-	return plaintext, nil
+	return FileInfo{
+		Version: c.version,
+		Cipher:  "AES-256-GCM (single block)",
+		KDF:     fmt.Sprintf("PBKDF2-HMAC-SHA256, %d iterations, static salt", PBKDF2Iterations),
+		Legacy:  true,
+	}, nil
 }
