@@ -22,6 +22,8 @@ cd bitseal
 go build -o bitseal
 ```
 
+Building requires Go 1.26 or newer (set by the `golang.org/x/crypto` dependency).
+
 ### Using go install
 ```bash
 go install github.com/dterana/bitseal@latest
@@ -133,6 +135,12 @@ That's it! Files encrypted with older versions will still decrypt automatically.
 - **File Permissions**: Output files are created with 0600 permissions (read/write only by owner).
 - **No Authentication**: The tool encrypts files but doesn't sign them. For authentication, consider using GPG signatures alongside encrypted files.
 
+## Limitations
+
+- **Whole file in memory**: Files are read and encrypted or decrypted in one piece, so memory use grows with file size. Encrypting a multi-gigabyte backup needs at least that much free RAM. Streaming would need a new cipher version with a chunked format.
+- **Interrupted runs**: Output is written to a `.bitseal-*.tmp` file next to the destination and renamed on success. If the process is killed mid-write (for example with SIGKILL), that temp file can remain and is safe to delete.
+- **Password in memory**: The password is held as a Go string and cannot be reliably wiped, so it may remain in process memory until exit.
+
 ## Examples
 
 ### Encrypt sensitive notes
@@ -199,6 +207,9 @@ go build -o bitseal
 ```bash
 go fmt ./...
 ```
+
+### Continuous integration
+`.github/workflows/ci.yml` checks formatting, runs `go vet` and `go test -race` on Linux and macOS, and runs `govulncheck` against the dependencies on every push to `main` or `staging` and on every pull request.
 
 ## Contributing
 
