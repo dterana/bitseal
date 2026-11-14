@@ -10,6 +10,9 @@ import (
 	"path/filepath"
 )
 
+// CurrentVersion is the cipher version used for new encryptions
+const CurrentVersion byte = 2
+
 // CipherManager handles version detection and routing
 type CipherManager struct {
 	ciphers map[byte]CipherVersion
@@ -19,8 +22,7 @@ func NewCipherManager() *CipherManager {
 	return &CipherManager{
 		ciphers: map[byte]CipherVersion{
 			1: NewCipherV1(),
-			// Future versions can be added here:
-			// 2: NewCipherV2(),
+			2: NewCipherV2(),
 		},
 	}
 }
@@ -34,7 +36,12 @@ func (cm *CipherManager) getCipher(version byte) (CipherVersion, error) {
 }
 
 // EncryptFile encrypts a file with the current cipher version
-func (c *CipherV1) EncryptFile(inputPath, outputPath, password string) error {
+func (cm *CipherManager) EncryptFile(inputPath, outputPath, password string) error {
+	c, err := cm.getCipher(CurrentVersion)
+	if err != nil {
+		return err
+	}
+
 	plaintext, err := os.ReadFile(inputPath)
 	if err != nil {
 		return fmt.Errorf("failed to read file: %w", err)

@@ -59,7 +59,7 @@ echo "mypassword" | ./bitseal encrypt -file secret.txt
 
 **Encryption**: AES-256 in GCM mode provides authenticated encryption, protecting against tampering and detecting corrupted files.
 
-**Key Derivation**: PBKDF2 with 100,000 iterations and SHA-256 converts your password into a cryptographic key, making brute-force attacks impractical.
+**Key Derivation**: New files (V2) use Argon2id (3 passes, 64 MiB, 4 threads) with a random 16-byte per-file salt. V1 files used PBKDF2-SHA256 (100,000 iterations) with a static salt and remain decryptable.
 
 **Random Nonce**: Each encryption uses a fresh random 12-byte nonce, so encrypting the same file twice produces completely different output.
 
@@ -68,8 +68,11 @@ echo "mypassword" | ./bitseal encrypt -file secret.txt
 ### File Format
 
 ```
-[1 byte: version] [12 bytes: nonce] [rest: encrypted data]
+V2: [1 byte: version=2] [16 bytes: salt] [12 bytes: nonce] [rest: encrypted data]
+V1: [1 byte: version=1] [12 bytes: nonce] [rest: encrypted data]
 ```
+
+In V2 the version and salt are authenticated as GCM additional data, so tampering with the header makes decryption fail.
 
 The version byte allows Bitseal to automatically route decryption to the correct algorithm, even as new versions are added.
 
@@ -115,7 +118,7 @@ That's it! Files encrypted with V1 will still decrypt automatically.
 ## Security Considerations
 
 - **Password Strength**: Use strong passwords (16+ characters with mixed case, numbers, symbols). Weak passwords are the weakest link.
-- **Salt**: Currently uses a static salt. For highest security in sensitive applications, consider per-file salts (requires storing them in the file or a separate database).
+- **Salt**: V2 uses a random per-file salt stored in the header. V1 files use a static salt; re-encrypt them with the current version to upgrade.
 - **File Permissions**: Output files are created with 0600 permissions (read/write only by owner).
 - **No Authentication**: The tool encrypts files but doesn't sign them. For authentication, consider using GPG signatures alongside encrypted files.
 

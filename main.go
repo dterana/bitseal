@@ -72,8 +72,8 @@ func encryptCommand(inputPath, outputPath string) error {
 		return fmt.Errorf("failed to read password: %w", err)
 	}
 
-	cipher := NewCipherV1()
-	return cipher.EncryptFile(inputPath, outputPath, password)
+	manager := NewCipherManager()
+	return manager.EncryptFile(inputPath, outputPath, password)
 }
 
 func decryptCommand(inputPath, outputPath string) error {
