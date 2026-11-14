@@ -19,7 +19,6 @@ Versioned formats, so files you encrypt today still open after the algorithms ch
 [![Streaming](https://img.shields.io/badge/streaming-bounded%20memory-informational)](#security-features)
 [![Dependencies](https://img.shields.io/badge/direct%20dependencies-2-brightgreen)](go.mod)
 [![Tests](https://img.shields.io/badge/tests-unit%20%7C%20CLI%20%7C%20e2e%20%7C%20fuzz-brightgreen)](#development)
-[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](#contributing)
 
 </div>
 
@@ -39,7 +38,7 @@ Versioned formats, so files you encrypt today still open after the algorithms ch
 - [Examples](#examples)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
-- [Contributing](#contributing) and [License](#license)
+- [Issues and pull requests](#issues-and-pull-requests) and [License](#license)
 
 ## Quick start
 
@@ -363,9 +362,9 @@ go fmt ./...
 
 Pushing a tag like `v0.1.0` runs `.github/workflows/release.yml`, which tests and publishes binaries with GoReleaser (`.goreleaser.yaml`).
 
-## Contributing
+## Issues and pull requests
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Bitseal is maintained by a single person, and pull requests can only be opened by repository collaborators, so external contributions are not accepted. Bug reports are welcome as [GitHub issues](https://github.com/dterana/bitseal/issues); please do not include passwords, key files or other sensitive data in them. Reports are handled on a best-effort basis.
 
 ## License
 
