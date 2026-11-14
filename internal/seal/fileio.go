@@ -36,7 +36,7 @@ func removeTrackedTemps() {
 	temps.mu.Lock()
 	defer temps.mu.Unlock()
 	for p := range temps.paths {
-		os.Remove(p)
+		_ = os.Remove(p) // best effort: the process is exiting
 		delete(temps.paths, p)
 	}
 }
@@ -73,8 +73,8 @@ func writeAtomicWith(path string, perm os.FileMode, fn func(io.Writer) error) er
 	defer untrackTemp(name)
 
 	abort := func(err error) error {
-		tmp.Close()
-		os.Remove(name)
+		_ = tmp.Close()
+		_ = os.Remove(name)
 		return err
 	}
 	fsErr := func(err error) error {

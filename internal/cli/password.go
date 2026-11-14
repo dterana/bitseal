@@ -8,6 +8,7 @@ package cli
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -75,7 +76,7 @@ func readPasswordLine(r io.Reader) ([]byte, error) {
 
 func readPasswordFrom(br *bufio.Reader) ([]byte, error) {
 	line, err := br.ReadBytes('\n')
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("failed to read password: %w", err)
 	}
 	defer seal.Wipe(line)

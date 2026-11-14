@@ -11,7 +11,6 @@ import (
 )
 
 var (
-	pattern         = testutil.Pattern
 	mustHex         = testutil.MustHex
 	writeFile       = testutil.WriteFile
 	readFile        = testutil.ReadFile
