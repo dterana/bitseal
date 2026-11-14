@@ -5,9 +5,11 @@
 **Future-proof file encryption for the command line.**
 Versioned formats, so files you encrypt today still open after the algorithms change.
 
-[![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![Status](https://img.shields.io/badge/status-pre--release-orange)](#limitations)
+[![CI](https://github.com/dterana/bitseal/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/dterana/bitseal/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/dterana/bitseal?include_prereleases&sort=semver)](https://github.com/dterana/bitseal/releases)
+[![Go](https://img.shields.io/github/go-mod/go-version/dterana/bitseal?logo=go&logoColor=white)](go.mod)
+[![License: MIT](https://img.shields.io/github/license/dterana/bitseal)](LICENSE)
+[![Status](https://img.shields.io/badge/status-pre--1.0-orange)](#limitations)
 [![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey)](#compatibility)
 [![Arch](https://img.shields.io/badge/arch-amd64%20%7C%20arm64-lightgrey)](#compatibility)
 
@@ -70,10 +72,9 @@ Bitseal is a lightweight command-line utility for encrypting and decrypting file
 | | Linux | macOS | Windows |
 |---|:---:|:---:|:---:|
 | Tested in CI | ✅ `ubuntu-latest` | ✅ `macos-latest` | not covered |
-| Release targets (GoReleaser) | amd64, arm64 | amd64, arm64 | amd64, arm64 (untested) |
+| Release binaries | amd64, arm64 | amd64, arm64 | amd64, arm64 (untested) |
 | Build from source | Go 1.26+ | Go 1.26+ | Go 1.26+ |
 
-No release has been published yet; the release targets describe what the release workflow builds.
 
 ### File formats
 
@@ -96,7 +97,7 @@ flowchart LR
 ## Installation
 
 ### From a release
-Once a release is published, download the archive for your platform from the GitHub releases page and put `bitseal` on your `PATH`. No release exists yet.
+Download the archive for your platform from the [releases page](https://github.com/dterana/bitseal/releases), check it against `checksums.txt`, and put `bitseal` on your `PATH`.
 
 ### From source
 Building requires Go 1.26 or newer (set by the `golang.org/x/crypto` dependency).
@@ -110,7 +111,6 @@ make build        # embeds the git revision in `bitseal version`
 ```bash
 go install github.com/dterana/bitseal@latest
 ```
-While the repository is private, Go needs to be told not to use the public proxy and needs git access: `GOPRIVATE=github.com/dterana/bitseal go install github.com/dterana/bitseal@latest`. Until a version tag exists, `@latest` resolves to the tip of the default branch.
 
 ## Usage
 
@@ -295,7 +295,7 @@ That's it! Files encrypted with older versions will still decrypt automatically,
 
 ## Limitations
 
-- **Pre-release**: The V2 format has not been released yet and may still change before the first tagged version.
+- **Pre-1.0**: Command-line flags and file formats may still change before 1.0. Check the release notes when upgrading.
 - **Interrupted runs**: Output is written to a `.bitseal-*.tmp` file next to the destination and renamed on success. Ctrl+C and SIGTERM remove it, but if the process is killed with SIGKILL the temp file can remain and is safe to delete.
 - **Buffered stdout decrypt**: `decrypt -out -` and V1 files are held in memory while decrypting (V2 to a file streams with bounded memory).
 - **No directories**: Bitseal encrypts single files or streams. Archive directories first.
