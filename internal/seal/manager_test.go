@@ -2,13 +2,15 @@ package seal
 
 import (
 	"bytes"
-	"github.com/dterana/bitseal/internal/testvectors"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/dterana/bitseal/internal/testvectors"
 )
 
 func TestManagerRegistersAllVersions(t *testing.T) {
@@ -891,7 +893,7 @@ func TestWriteFileAtomicFailureKeepsExistingAndCleansUp(t *testing.T) {
 			w.Write([]byte("partial"))
 			return os.ErrInvalid
 		})
-		if err != os.ErrInvalid {
+		if !errors.Is(err, os.ErrInvalid) {
 			t.Fatalf("callback error must be returned unchanged, got %v", err)
 		}
 		if string(readFile(t, path)) != "original" {
