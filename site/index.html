@@ -327,8 +327,8 @@ footer a{text-decoration:none}footer a:hover{color:var(--foam)}
       <div class="fact"><dt>Cipher</dt><dd>AES-256-GCM, authenticated per chunk, so tampering is detected.</dd></div>
       <div class="fact"><dt>Key derivation</dt><dd>Argon2id with a per-file salt. Version 1 files use PBKDF2-SHA256.</dd></div>
       <div class="fact"><dt>Memory</dt><dd>Streaming format. Large files use bounded memory and flow through pipes.</dd></div>
-      <div class="fact"><dt>Dependencies</dt><dd>Go standard library, <code>x/crypto</code> and <code>x/term</code>. Nothing else.</dd></div>
-      <div class="fact"><dt>Platforms</dt><dd>Linux and macOS on amd64 and arm64, tested in CI. Windows builds are untested.</dd></div>
+      <div class="fact"><dt>Dependencies</dt><dd>Two direct dependencies, <code>x/crypto</code> and <code>x/term</code>, on top of the Go standard library.</dd></div>
+      <div class="fact"><dt>Platforms</dt><dd>Linux and macOS on amd64 and arm64, tested in CI. Windows is not supported for now.</dd></div>
       <div class="fact"><dt>Tests</dt><dd>Unit, CLI, end to end and fuzz tests, plus golden vectors for every format.</dd></div>
     </dl>
     <div class="honest">
@@ -446,10 +446,10 @@ make build</pre></div>
 
   /* terminal demo */
   var demos = {
-    enc: [['$ bitseal encrypt notes.txt','c'],['Password: ','d'],['Confirm password: ','d'],['notes.txt -> notes.txt.enc','o'],['','d'],['$ bitseal info notes.txt.enc','c'],['Version: 2 (current)','o'],['KDF: Argon2id','o'],['Key file: not required','o'],['','d'],['$ bitseal decrypt notes.txt.enc','c'],['notes.txt.enc -> notes.txt','o']],
+    enc: [['$ bitseal encrypt notes.txt','c'],['Enter password: ','d'],['Confirm password: ','d'],['✓ Encrypted notes.txt -> notes.txt.enc','o'],['','d'],['$ bitseal info notes.txt.enc','c'],['File:      notes.txt.enc','o'],['Version:   2','o'],['Cipher:    AES-256-GCM (chunked), 64 KiB chunks','o'],['KDF:       Argon2id (time=3, memory=64 MiB, threads=4), random per-file salt','o'],['Key file:  not required','o'],['','d'],['$ bitseal decrypt notes.txt.enc','c'],['Enter password: ','d'],['✓ Decrypted notes.txt.enc -> notes.txt','o']],
     pipe: [['$ tar czf - ./project | bitseal encrypt \\','c'],['    -password-file pw -file - -out project.tgz.enc','c'],['','d'],['$ bitseal decrypt -password-file pw \\','c'],['    -file project.tgz.enc -out - | tar xzf -','c'],['','d'],['Prompts and errors go to stderr.','d'],['stdout carries data only, so pipelines stay clean.','d']],
-    rekey: [['$ bitseal info old.enc','c'],['Version: 1 (legacy)','o'],['','d'],['$ bitseal rekey old.enc','c'],['old.enc upgraded to version 2','o'],['','d'],['$ bitseal rekey -change-password a.enc','c'],['Current password: ','d'],['New password: ','d'],['a.enc rekeyed','o']],
-    key: [['$ bitseal encrypt -keyfile ~/.keys/seal.key notes.txt','c'],['notes.txt -> notes.txt.enc','o'],['','d'],['$ bitseal decrypt notes.txt.enc','c'],['error: this file requires a key file (use -keyfile)','d'],['','d'],['$ bitseal decrypt -keyfile ~/.keys/seal.key notes.txt.enc','c'],['notes.txt.enc -> notes.txt','o']]
+    rekey: [['$ bitseal info old.enc','c'],['File:      old.enc','o'],['Version:   1','o'],['Cipher:    AES-256-GCM (single block)','o'],['KDF:       PBKDF2-HMAC-SHA256, 100000 iterations, static salt','o'],['Key file:  not supported','o'],['Status:    legacy format, upgrade with: bitseal rekey old.enc','o'],['','d'],['$ bitseal rekey old.enc','c'],['Enter password: ','d'],['✓ Re-encrypted old.enc -> old.enc','o'],['','d'],['$ bitseal rekey -change-password a.enc','c'],['Current password: ','d'],['New password: ','d'],['Confirm new password: ','d'],['✓ Re-encrypted a.enc -> a.enc','o']],
+    key: [['$ bitseal encrypt -keyfile ~/.keys/seal.key notes.txt','c'],['Enter password: ','d'],['Confirm password: ','d'],['✓ Encrypted notes.txt -> notes.txt.enc','o'],['','d'],['$ bitseal decrypt notes.txt.enc','c'],['Enter password: ','d'],['Decryption error: notes.txt.enc: this file requires a key file (-keyfile)','d'],['','d'],['$ bitseal decrypt -keyfile ~/.keys/seal.key notes.txt.enc','c'],['Enter password: ','d'],['✓ Decrypted notes.txt.enc -> notes.txt','o']]
   };
   var screen = document.getElementById('screen'), tabs = document.getElementById('tabs'), timer;
   function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
@@ -491,7 +491,8 @@ make build</pre></div>
   });
 
   /* latest release, best effort */
-  fetch('https://api.github.com/repos/dterana/bitseal/releases/latest').then(function(r){ return r.ok ? r.json() : null; }).then(function(j){
+  fetch('https://api.github.com/repos/dterana/bitseal/releases?per_page=1').then(function(r){ return r.ok ? r.json() : null; }).then(function(list){
+    var j = list && list[0];
     if (!j || !j.tag_name) return;
     document.getElementById('ver').textContent = 'Latest release: ' + j.tag_name + '.';
     document.getElementById('dl').textContent = 'Download ' + j.tag_name;
