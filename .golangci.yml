@@ -1,0 +1,34 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard   # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - errorlint
+    - gosec
+    - misspell
+    - unconvert
+  settings:
+    errcheck:
+      # Failing to print a message to the terminal has no useful recovery.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+    gosec:
+      excludes:
+        # G304 (file inclusion via variable): opening the paths the user names
+        # is the purpose of a file encryption tool.
+        - G304
+  exclusions:
+    rules:
+      # tests write fixtures with loose permissions and ignore cleanup errors
+      - path: _test\.go
+        linters: [gosec, errcheck]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
