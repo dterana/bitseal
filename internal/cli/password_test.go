@@ -1,8 +1,9 @@
-package main
+package cli
 
 import (
 	"bytes"
 	"errors"
+	"github.com/dterana/bitseal/internal/seal"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -62,15 +63,15 @@ func TestCleanPasswordReturnsIndependentCopy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wipe(in)
+	seal.Wipe(in)
 	if string(got) != "secret" {
 		t.Fatalf("wiping the input changed the result: %q", got)
 	}
 }
 
 func TestReadPasswordPiped(t *testing.T) {
-	captureStdio(t, "hello world\n")
-	got, err := readPassword()
+	std := captureStdio(t, "hello world\n")
+	got, err := std.promptPassword("Enter password: ")
 	if err != nil || string(got) != "hello world" {
 		t.Fatalf("got %q, %v", got, err)
 	}
@@ -78,7 +79,7 @@ func TestReadPasswordPiped(t *testing.T) {
 
 func TestPromptGoesToStderrNotStdout(t *testing.T) {
 	std := captureStdio(t, "pw\n")
-	if _, err := readPassword(); err != nil {
+	if _, err := std.promptPassword("Enter password: "); err != nil {
 		t.Fatal(err)
 	}
 	if std.out.Len() != 0 {
@@ -92,73 +93,73 @@ func TestPromptGoesToStderrNotStdout(t *testing.T) {
 // Two prompts on one pipe (current and new password) must each get their own
 // line; the first read must not swallow the second.
 func TestSeveralPromptsShareOnePipe(t *testing.T) {
-	captureStdio(t, "first\nsecond\nthird\n")
+	std := captureStdio(t, "first\nsecond\nthird\n")
 	for _, want := range []string{"first", "second", "third"} {
-		got, err := promptPassword("> ")
+		got, err := std.promptPassword("> ")
 		if err != nil || string(got) != want {
 			t.Fatalf("got %q, %v; want %q", got, err, want)
 		}
 	}
-	if _, err := promptPassword("> "); err == nil {
+	if _, err := std.promptPassword("> "); err == nil {
 		t.Fatal("pipe is exhausted, expected an error")
 	}
 }
 
 func TestReadPasswordTerminal(t *testing.T) {
-	captureStdio(t, "")
-	fakeTerminal(t, "  typed pw \n")
-	got, err := readPassword()
+	std := captureStdio(t, "")
+	fakeTerminal(std, "  typed pw \n")
+	got, err := std.promptPassword("Enter password: ")
 	if err != nil || string(got) != "typed pw" {
 		t.Fatalf("got %q, %v", got, err)
 	}
 }
 
 func TestReadPasswordTerminalEmpty(t *testing.T) {
-	captureStdio(t, "")
-	fakeTerminal(t, "   ")
-	if _, err := readPassword(); err == nil {
+	std := captureStdio(t, "")
+	fakeTerminal(std, "   ")
+	if _, err := std.promptPassword("Enter password: "); err == nil {
 		t.Fatal("empty terminal password must be rejected")
 	}
 }
 
 func TestReadPasswordTerminalError(t *testing.T) {
-	captureStdio(t, "")
-	fakeTerminal(t) // no secrets queued -> EOF
-	if _, err := readPassword(); err == nil {
+	std := captureStdio(t, "")
+	fakeTerminal(std) // no secrets queued -> EOF
+	if _, err := std.promptPassword("Enter password: "); err == nil {
 		t.Fatal("expected terminal read error")
 	}
 }
 
 func TestReadNewPasswordTerminalConfirmMatch(t *testing.T) {
-	captureStdio(t, "")
-	fakeTerminal(t, "s3cret phrase", "s3cret phrase")
-	got, err := readNewPassword()
+	std := captureStdio(t, "")
+	fakeTerminal(std, "s3cret phrase", "s3cret phrase")
+	got, err := std.promptNewPassword("Enter password: ", "Confirm password: ")
 	if err != nil || string(got) != "s3cret phrase" {
 		t.Fatalf("got %q, %v", got, err)
 	}
 }
 
 func TestReadNewPasswordTerminalConfirmMismatch(t *testing.T) {
-	captureStdio(t, "")
-	fakeTerminal(t, "one", "two")
-	_, err := readNewPassword()
+	std := captureStdio(t, "")
+	fakeTerminal(std, "one", "two")
+	_, err := std.promptNewPassword("Enter password: ", "Confirm password: ")
 	if err == nil || !strings.Contains(err.Error(), "do not match") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestReadNewPasswordTerminalConfirmEmpty(t *testing.T) {
-	captureStdio(t, "")
-	fakeTerminal(t, "one", "")
-	if _, err := readNewPassword(); err == nil {
+	std := captureStdio(t, "")
+	fakeTerminal(std, "one", "")
+	if _, err := std.promptNewPassword("Enter password: ", "Confirm password: "); err == nil {
 		t.Fatal("empty confirmation must fail")
 	}
 }
 
 func TestReadNewPasswordTerminalFirstEmptyDoesNotPromptAgain(t *testing.T) {
 	std := captureStdio(t, "")
-	fakeTerminal(t, "", "unused")
-	if _, err := readNewPassword(); err == nil {
+	fakeTerminal(std, "", "unused")
+	if _, err := std.promptNewPassword("Enter password: ", "Confirm password: "); err == nil {
 		t.Fatal("empty first password must fail")
 	}
 	if strings.Contains(std.err.String(), "Confirm") {
@@ -167,8 +168,8 @@ func TestReadNewPasswordTerminalFirstEmptyDoesNotPromptAgain(t *testing.T) {
 }
 
 func TestReadNewPasswordPipedSkipsConfirmation(t *testing.T) {
-	captureStdio(t, "only once\n")
-	got, err := readNewPassword()
+	std := captureStdio(t, "only once\n")
+	got, err := std.promptNewPassword("Enter password: ", "Confirm password: ")
 	if err != nil || string(got) != "only once" {
 		t.Fatalf("got %q, %v", got, err)
 	}
@@ -195,12 +196,12 @@ func TestReadPasswordFile(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			captureStdio(t, "")
+			std := captureStdio(t, "")
 			path := filepath.Join(t.TempDir(), "pw")
 			if err := os.WriteFile(path, []byte(tc.content), 0600); err != nil {
 				t.Fatal(err)
 			}
-			got, err := readPasswordFile(path)
+			got, err := std.readPasswordFile(path)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got %q", got)
@@ -215,8 +216,8 @@ func TestReadPasswordFile(t *testing.T) {
 }
 
 func TestReadPasswordFileMissing(t *testing.T) {
-	captureStdio(t, "")
-	if _, err := readPasswordFile(filepath.Join(t.TempDir(), "nope")); err == nil || !strings.Contains(err.Error(), "password file") {
+	std := captureStdio(t, "")
+	if _, err := std.readPasswordFile(filepath.Join(t.TempDir(), "nope")); err == nil || !strings.Contains(err.Error(), "password file") {
 		t.Fatalf("unexpected: %v", err)
 	}
 }
@@ -233,13 +234,13 @@ func TestReadPasswordFilePermissionWarning(t *testing.T) {
 	os.Chmod(loose, 0644)
 
 	std := captureStdio(t, "")
-	if _, err := readPasswordFile(tight); err != nil {
+	if _, err := std.readPasswordFile(tight); err != nil {
 		t.Fatal(err)
 	}
 	if std.err.Len() != 0 {
 		t.Fatalf("0600 file must not warn: %q", std.err.String())
 	}
-	if pw, err := readPasswordFile(loose); err != nil || string(pw) != "pw" {
+	if pw, err := std.readPasswordFile(loose); err != nil || string(pw) != "pw" {
 		t.Fatalf("a loose file still works: %q, %v", pw, err)
 	}
 	if !strings.Contains(std.err.String(), "accessible by other users") {

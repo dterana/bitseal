@@ -1,4 +1,4 @@
-package main
+package seal
 
 import (
 	"bytes"

@@ -1,9 +1,10 @@
-package main
+package seal
 
 import (
 	"bytes"
 	"crypto/rand"
 	"encoding/binary"
+	"github.com/dterana/bitseal/internal/testvectors"
 	"io"
 	"runtime"
 	"strings"
@@ -167,7 +168,7 @@ func TestCipherV2PerFileSaltAndNoncePrefix(t *testing.T) {
 // ----------------------------------------------------------------------------
 
 func TestCipherV2HeaderFields(t *testing.T) {
-	kdf := kdfParams{Time: 2, MemoryKiB: 128, Threads: 2}
+	kdf := KDFParams{Time: 2, MemoryKiB: 128, Threads: 2}
 	enc, err := newCipherV2With(kdf, 9).Encrypt([]byte("x"), sec("pw"))
 	if err != nil {
 		t.Fatal(err)
@@ -186,7 +187,7 @@ func TestCipherV2HeaderFields(t *testing.T) {
 }
 
 func TestHeaderMarshalParseRoundTrip(t *testing.T) {
-	h := headerV2{flags: flagKeyFile, chunkLog2: 12, kdf: kdfParams{Time: 5, MemoryKiB: 4096, Threads: 3}}
+	h := headerV2{flags: flagKeyFile, chunkLog2: 12, kdf: KDFParams{Time: 5, MemoryKiB: 4096, Threads: 3}}
 	rand.Read(h.salt[:])
 	rand.Read(h.noncePrefix[:])
 	b := h.marshal()
@@ -238,7 +239,7 @@ func TestParseHeaderV2Validation(t *testing.T) {
 
 // A hostile header must be rejected before any memory is allocated for it.
 func TestDecryptRejectsHostileKDFBeforeAllocating(t *testing.T) {
-	h := headerV2{chunkLog2: 16, kdf: kdfParams{Time: 1, MemoryKiB: 1 << 31, Threads: 1}}
+	h := headerV2{chunkLog2: 16, kdf: KDFParams{Time: 1, MemoryKiB: 1 << 31, Threads: 1}}
 	data := append(h.marshal(), make([]byte, 64)...)
 
 	var before, after runtime.MemStats
@@ -255,12 +256,12 @@ func TestDecryptRejectsHostileKDFBeforeAllocating(t *testing.T) {
 }
 
 func TestDecryptUsesParametersFromHeader(t *testing.T) {
-	enc, err := newCipherV2With(kdfParams{Time: 2, MemoryKiB: 128, Threads: 2}, 7).Encrypt(pattern(500), sec("pw"))
+	enc, err := newCipherV2With(KDFParams{Time: 2, MemoryKiB: 128, Threads: 2}, 7).Encrypt(pattern(500), sec("pw"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	// a cipher configured with entirely different defaults must still decrypt
-	other := newCipherV2With(kdfParams{Time: 1, MemoryKiB: 64, Threads: 1}, 5)
+	other := newCipherV2With(KDFParams{Time: 1, MemoryKiB: 64, Threads: 1}, 5)
 	dec, err := other.Decrypt(enc, sec("pw"))
 	if err != nil || !bytes.Equal(dec, pattern(500)) {
 		t.Fatalf("decrypt with header params failed: %v", err)
@@ -269,9 +270,9 @@ func TestDecryptUsesParametersFromHeader(t *testing.T) {
 
 func TestEncryptRejectsInvalidConfiguration(t *testing.T) {
 	bad := []*CipherV2{
-		newCipherV2With(kdfParams{Time: 0, MemoryKiB: 64, Threads: 1}, 6),
-		newCipherV2With(kdfParams{Time: 1, MemoryKiB: 1, Threads: 1}, 6),
-		newCipherV2With(kdfParams{Time: 1, MemoryKiB: 64, Threads: 0}, 6),
+		newCipherV2With(KDFParams{Time: 0, MemoryKiB: 64, Threads: 1}, 6),
+		newCipherV2With(KDFParams{Time: 1, MemoryKiB: 1, Threads: 1}, 6),
+		newCipherV2With(KDFParams{Time: 1, MemoryKiB: 64, Threads: 0}, 6),
 		newCipherV2With(fastKDF, minChunkLog2-1),
 		newCipherV2With(fastKDF, maxChunkLog2+1),
 	}
@@ -283,10 +284,10 @@ func TestEncryptRejectsInvalidConfiguration(t *testing.T) {
 }
 
 func TestDefaultKDFParametersAreSane(t *testing.T) {
-	if err := defaultKDF.validate(); err != nil {
+	if err := DefaultKDF.validate(); err != nil {
 		t.Fatal(err)
 	}
-	if defaultKDF.MemoryKiB < 19*1024 || defaultKDF.Time < 2 {
+	if DefaultKDF.MemoryKiB < 19*1024 || DefaultKDF.Time < 2 {
 		t.Fatal("default Argon2id cost fell below the OWASP minimum (m=19 MiB, t=2)")
 	}
 }
@@ -589,42 +590,10 @@ func TestSecretMaterialAndWipe(t *testing.T) {
 // Golden vectors
 // ----------------------------------------------------------------------------
 
-func TestGoldenVectors(t *testing.T) {
-	cases := []struct {
-		name   string
-		hex    string
-		secret Secret
-		want   string
-	}{
-		{"v1", goldenV1Hex, sec(goldenPassword), goldenPlaintext},
-		{"v2 default params", goldenV2Hex, sec(goldenPassword), goldenPlaintext},
-		{"v2 multi chunk, params from header", goldenV2MultiHex, sec(goldenPassword), goldenMultiPlaintext},
-		{"v2 exact chunk boundary", goldenV2BoundaryHex, sec(goldenPassword), goldenBoundaryPlaintext},
-		{"v2 key file", goldenV2KeyFileHex, secKF(goldenPassword, goldenKeyFile), goldenPlaintext},
-	}
-	m := fastManager()
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			data := mustHex(t, tc.hex)
-			c, err := m.getCipher(data[0])
-			if err != nil {
-				t.Fatal(err)
-			}
-			dec, err := c.Decrypt(data, tc.secret)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if string(dec) != tc.want {
-				t.Fatalf("got %q", dec)
-			}
-		})
-	}
-}
-
 func TestGoldenWrongSecretFails(t *testing.T) {
 	m := fastManager()
 	for name, h := range map[string]string{
-		"v1": goldenV1Hex, "v2": goldenV2Hex, "multi": goldenV2MultiHex, "boundary": goldenV2BoundaryHex,
+		"v1": testvectors.V1Hex, "v2": testvectors.V2Hex, "multi": testvectors.V2MultiHex, "boundary": testvectors.V2BoundaryHex,
 	} {
 		data := mustHex(t, h)
 		c, _ := m.getCipher(data[0])
@@ -738,7 +707,7 @@ func TestStreamingUsesBoundedMemory(t *testing.T) {
 		t.Skip("large stream skipped in short mode")
 	}
 	const size = 64 << 20
-	c := newCipherV2With(fastKDF, defaultChunkLog2)
+	c := newCipherV2With(fastKDF, DefaultChunkLog2)
 
 	var before, after runtime.MemStats
 	runtime.GC()
@@ -783,7 +752,7 @@ func TestInspect(t *testing.T) {
 		}
 	})
 	t.Run("v2", func(t *testing.T) {
-		enc, _ := newCipherV2With(kdfParams{Time: 2, MemoryKiB: 2048, Threads: 3}, 12).Encrypt([]byte("x"), sec("pw"))
+		enc, _ := newCipherV2With(KDFParams{Time: 2, MemoryKiB: 2048, Threads: 3}, 12).Encrypt([]byte("x"), sec("pw"))
 		info, err := NewCipherV2().Inspect(bytes.NewReader(enc))
 		if err != nil || info.Version != 2 || info.Legacy || info.KeyFile || info.ChunkSize != 4096 {
 			t.Fatalf("%+v, %v", info, err)
