@@ -1,24 +1,102 @@
-# Bitseal
+<div align="center">
 
-A future-proof file encryption CLI tool in Go with versioned encryption algorithms for long-term data protection.
+# 🔐 Bitseal
 
-## Overview
+**Future-proof file encryption for the command line.**
+Versioned formats, so files you encrypt today still open after the algorithms change.
+
+[![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Status](https://img.shields.io/badge/status-pre--release-orange)](#limitations)
+[![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey)](#compatibility)
+[![Arch](https://img.shields.io/badge/arch-amd64%20%7C%20arm64-lightgrey)](#compatibility)
+
+[![Cipher](https://img.shields.io/badge/cipher-AES--256--GCM-2ea44f)](#security-features)
+[![KDF](https://img.shields.io/badge/KDF-Argon2id-2ea44f)](#security-features)
+[![Format](https://img.shields.io/badge/file%20format-v2%20%E2%80%A2%20reads%20v1-informational)](#file-format)
+[![Streaming](https://img.shields.io/badge/streaming-bounded%20memory-informational)](#security-features)
+[![Dependencies](https://img.shields.io/badge/direct%20dependencies-2-brightgreen)](go.mod)
+[![Tests](https://img.shields.io/badge/tests-unit%20%7C%20CLI%20%7C%20e2e%20%7C%20fuzz-brightgreen)](#development)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](#contributing)
+
+</div>
+
+---
+
+## Table of contents
+
+- [Quick start](#quick-start)
+- [Why Bitseal](#why-bitseal)
+- [Compatibility](#compatibility)
+- [Installation](#installation)
+- [Usage](#usage)
+- [How it works](#how-it-works)
+- [Architecture](#architecture)
+- [Security considerations](#security-considerations)
+- [Limitations](#limitations)
+- [Examples](#examples)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
+- [Contributing](#contributing) and [License](#license)
+
+## Quick start
+
+```bash
+go install github.com/dterana/bitseal@latest
+
+bitseal encrypt notes.txt            # asks for a password twice, writes notes.txt.enc
+bitseal decrypt notes.txt.enc        # restores notes.txt
+bitseal info notes.txt.enc           # shows the format, no password needed
+```
+
+## Why Bitseal
 
 Bitseal is a lightweight command-line utility for encrypting and decrypting files with automatic version management. Unlike tools like OpenSSL that change their defaults and break backward compatibility, Bitseal embeds version information in every encrypted file, allowing it to decrypt old files even after algorithm changes.
 
-**Why Bitseal?**
-- 🔒 **Future-proof**: Version your encryption. Decrypt old files forever, even after updating algorithms
-- 🎯 **Simple**: Single-purpose tool focused on file encryption
-- 🔐 **Secure**: AES-256-GCM with Argon2id key derivation, per-file salts, optional key file and hidden password input
-- 🌊 **Streaming**: Chunked format, so large files use bounded memory and can flow through pipes
-- 🧰 **Scriptable**: Password from a file or environment variable, stdin/stdout support, quiet stdout
-- 🚀 **Easy to extend**: Interface-based design makes adding new cipher versions trivial
-- 📦 **Minimal dependencies**: Go standard library plus `golang.org/x/crypto` and `golang.org/x/term`
+| | |
+|---|---|
+| 🔒 **Future-proof** | Every file records its format. Decrypt old files forever, even after updating algorithms |
+| 🔐 **Secure** | AES-256-GCM, Argon2id key derivation, per-file salts, optional key file, hidden password input |
+| 🌊 **Streaming** | Chunked format: large files use bounded memory and can flow through pipes |
+| 🧰 **Scriptable** | Password from a file or environment variable, stdin and stdout, clean stdout, real exit codes |
+| 🔁 **Upgradable** | `rekey` moves old files to the current format, or changes the password or key file, atomically |
+| 🚀 **Extensible** | Interface-based design makes adding new cipher versions trivial |
+| 📦 **Minimal** | Go standard library plus `golang.org/x/crypto` and `golang.org/x/term` |
+
+## Compatibility
+
+### Platforms
+
+| | Linux | macOS | Windows |
+|---|:---:|:---:|:---:|
+| Tested in CI | ✅ `ubuntu-latest` | ✅ `macos-latest` | not covered |
+| Release targets (GoReleaser) | amd64, arm64 | amd64, arm64 | amd64, arm64 (untested) |
+| Build from source | Go 1.26+ | Go 1.26+ | Go 1.26+ |
+
+No release has been published yet; the release targets describe what the release workflow builds.
+
+### File formats
+
+| Version | Written by this build | Decrypt | `rekey` | `info` | Notes |
+|:---:|:---:|:---:|:---:|:---:|---|
+| 1 | no | ✅ | ✅ (upgrades) | ✅ | Legacy: PBKDF2-SHA256, static salt, single block |
+| 2 | ✅ (current) | ✅ | ✅ | ✅ | Argon2id, per-file salt, chunked, optional key file |
+| newer | n/a | refused with a clear error | refused | refused | `unsupported encryption version` |
+
+```mermaid
+flowchart LR
+    F["encrypted file"] --> V{"version byte"}
+    V -->|1| C1["V1: PBKDF2 + AES-GCM"]
+    V -->|2| C2["V2: Argon2id + chunked AES-GCM"]
+    V -->|other| E["error: unsupported version"]
+    C1 --> P["plaintext"]
+    C2 --> P
+```
 
 ## Installation
 
 ### From a release
-Download the archive for your platform from the GitHub releases page and put `bitseal` on your `PATH`.
+Once a release is published, download the archive for your platform from the GitHub releases page and put `bitseal` on your `PATH`. No release exists yet.
 
 ### From source
 Building requires Go 1.26 or newer (set by the `golang.org/x/crypto` dependency).
@@ -32,19 +110,34 @@ make build        # embeds the git revision in `bitseal version`
 ```bash
 go install github.com/dterana/bitseal@latest
 ```
+While the repository is private, Go needs to be told not to use the public proxy and needs git access: `GOPRIVATE=github.com/dterana/bitseal go install github.com/dterana/bitseal@latest`. Until a version tag exists, `@latest` resolves to the tip of the default branch.
 
 ## Usage
 
-```
-bitseal encrypt [flags] [file...]   Encrypt files (writes <file>.enc)
-bitseal decrypt [flags] [file...]   Decrypt files (strips .enc)
-bitseal rekey   [flags] [file...]   Re-encrypt files in place with the current format,
-                                    optionally with a new password or key file
-bitseal info    [file...]           Show a file's format without decrypting it
-bitseal version                     Show version information
-```
+| Command | What it does |
+|---|---|
+| `bitseal encrypt [flags] [file...]` | Encrypt files (writes `<file>.enc`) |
+| `bitseal decrypt [flags] [file...]` | Decrypt files (strips `.enc`) |
+| `bitseal rekey [flags] [file...]` | Re-encrypt in place with the current format, optionally with a new password or key file |
+| `bitseal info [file...]` | Show a file's format without decrypting it |
+| `bitseal version` | Show version information |
 
 Put flags before the file names. Exit codes: `0` success, `1` an operation failed, `2` invalid flags.
+
+### Flags
+
+| Flag | Commands | Meaning |
+|---|---|---|
+| `-file <path>` | all | Input file, repeatable. `-` reads stdin |
+| `-out <path>` | encrypt, decrypt, rekey | Output file, single input only. `-` writes stdout |
+| `-password-file <path>` | encrypt, decrypt, rekey | Read the password from the first line of a file |
+| `-password-env <name>` | encrypt, decrypt, rekey | Read the password from an environment variable |
+| `-keyfile <path>` | encrypt, decrypt, rekey | Use a key file as a second factor |
+| `-change-password` | rekey | Prompt for a new password |
+| `-new-password-file <path>` | rekey | Read the new password from a file |
+| `-new-password-env <name>` | rekey | Read the new password from an environment variable |
+| `-new-keyfile <path>` | rekey | Set or replace the key file |
+| `-no-keyfile` | rekey | Remove the key file requirement |
 
 ### Encrypt and decrypt
 ```bash
@@ -118,21 +211,21 @@ Key file:  not required
 ```
 `info` reads only the header and needs no password.
 
-## How It Works
+## How it works
 
-### Security Features
+### Security features
 
-**Encryption**: AES-256 in GCM mode provides authenticated encryption, protecting against tampering and detecting corrupted files.
+| Feature | Detail |
+|---|---|
+| **Authenticated encryption** | AES-256 in GCM mode protects against tampering and detects corrupted files |
+| **Key derivation** | V2 uses Argon2id (3 passes, 64 MiB, 4 threads) with a random 16-byte per-file salt |
+| **Parameters in the header** | The KDF cost is stored in each file, so defaults can be raised later without a new cipher version, and old files keep decrypting with the parameters they were written with |
+| **Bounded header values** | Parameters read from a file are capped (at most 1 GiB of memory), so a hostile file cannot make Bitseal exhaust memory |
+| **Chunked authentication** | 64 KiB chunks whose nonces encode position and "last chunk", so reordering, duplicating, dropping or truncating chunks is detected, including truncation at a chunk boundary. The whole header is authenticated with every chunk |
+| **Atomic writes** | Output goes to a temporary file in the destination directory and is renamed into place, so a failed run never truncates or half-writes an existing file. Ctrl+C and SIGTERM remove the temporary file |
+| **Hidden input** | The password is read with terminal echo disabled |
 
-**Key Derivation**: New files (V2) use Argon2id (3 passes, 64 MiB, 4 threads) with a random 16-byte per-file salt. The parameters are stored in each file's header, so the defaults can be raised later without a new cipher version, and old files keep decrypting with the parameters they were written with. Parameters read from a file are bounded (at most 1 GiB of memory), so a hostile file cannot make Bitseal exhaust memory.
-
-**Chunked authentication**: V2 splits data into 64 KiB chunks. Each chunk's nonce encodes its position and whether it is the last one, so reordering, duplicating, dropping or truncating chunks is detected, including truncation at a chunk boundary. The whole header is authenticated as additional data of every chunk.
-
-**Atomic Writes**: Output is written to a temporary file in the destination directory and renamed into place, so a failed run never truncates or half-writes an existing file. An interrupt (Ctrl+C) or SIGTERM removes the temporary file.
-
-**Password Input**: The password is read with terminal echo disabled, so nothing appears on screen as you type.
-
-### File Format
+### File format
 
 ```
 V2: [version=2:1] [flags:1] [chunk size exponent:1] [Argon2 time:4] [Argon2 memory KiB:4]
@@ -147,7 +240,7 @@ V1 uses PBKDF2-SHA256 (100,000 iterations) with a static salt. It is still decry
 
 The version byte allows Bitseal to automatically route decryption to the correct algorithm, even as new versions are added.
 
-## Why Version Your Encryption?
+### Why version your encryption?
 
 The OpenSSL problem: In 2023, OpenSSL changed its default digest from MD5 to SHA-256 for `enc` command. If you had encrypted files with the old version, you couldn't decrypt them anymore without specifying legacy parameters.
 
@@ -157,15 +250,17 @@ Bitseal solves this by embedding the version number in every encrypted file. Whe
 
 The codebase is organized for easy maintenance and extension:
 
-- **main.go**: CLI entry point, commands and flags
-- **crypto.go**: `CipherVersion` and `StreamCipher` interfaces, `Secret`, and the legacy V1 cipher
-- **crypto_v2.go**: V2 cipher (chunked AES-GCM, Argon2id, header handling)
-- **cipher_manager.go**: Version detection, file operations, rekey and inspect
-- **fileio.go**: Atomic writes, temp file tracking and signal cleanup
-- **password.go**: Password prompt, pipe, file, environment and key file input
-- **version.go**: Version and build information
+| File | Responsibility |
+|---|---|
+| `main.go` | CLI entry point, commands and flags |
+| `crypto.go` | `CipherVersion` and `StreamCipher` interfaces, `Secret`, and the legacy V1 cipher |
+| `crypto_v2.go` | V2 cipher: chunked AES-GCM, Argon2id, header handling |
+| `cipher_manager.go` | Version detection, file operations, rekey and inspect |
+| `fileio.go` | Atomic writes, temp file tracking and signal cleanup |
+| `password.go` | Password prompt, pipe, file, environment and key file input |
+| `version.go` | Version and build information |
 
-### Adding a New Cipher Version
+### Adding a new cipher version
 
 1. Create a new cipher implementation (see `crypto_v2.go`) implementing `CipherVersion`, and `StreamCipher` if it can stream:
 ```go
@@ -190,19 +285,21 @@ ciphers: map[byte]CipherVersion{
 
 That's it! Files encrypted with older versions will still decrypt automatically, and `rekey` upgrades them.
 
-## Security Considerations
+## Security considerations
 
-- **Password Strength**: Use strong passwords (16+ characters, or a long passphrase). A weak password is the weakest link; Argon2id slows guessing but cannot save a guessable password. A key file adds a second factor.
+- **Password strength**: Use strong passwords (16+ characters, or a long passphrase). A weak password is the weakest link; Argon2id slows guessing but cannot save a guessable password. A key file adds a second factor.
 - **Salt**: V2 uses a random per-file salt stored in the header. V1 files use a static salt; upgrade them with `bitseal rekey`.
-- **File Permissions**: Output files are created with 0600 permissions (read/write only by owner).
+- **File permissions**: Output files are created with 0600 permissions (read/write only by owner).
 - **Authentication scope**: The tool encrypts and authenticates files with the password, but a file cannot prove who wrote it. For that, use signatures alongside encrypted files.
 - **Password in memory**: Bitseal zeroes its own copies of the password and key file after use. This is best effort: Go and the terminal layer may keep other copies until the process exits.
 
 ## Limitations
 
+- **Pre-release**: The V2 format has not been released yet and may still change before the first tagged version.
 - **Interrupted runs**: Output is written to a `.bitseal-*.tmp` file next to the destination and renamed on success. Ctrl+C and SIGTERM remove it, but if the process is killed with SIGKILL the temp file can remain and is safe to delete.
 - **Buffered stdout decrypt**: `decrypt -out -` and V1 files are held in memory while decrypting (V2 to a file streams with bounded memory).
 - **No directories**: Bitseal encrypts single files or streams. Archive directories first.
+- **Windows**: Release binaries are built for Windows, but the test suite does not run there.
 - **No Keychain integration**: Use `-password-file` or `-password-env` to feed a password from your secret store.
 
 ## Examples
@@ -230,33 +327,17 @@ tar czf - /path/to/data | ./bitseal encrypt -password-file ~/.pw -file - -out ba
 
 ## Troubleshooting
 
-**"decryption failed (wrong password or corrupted file)"**
-- Check that you entered the correct password (and key file, if one was used)
-- Verify the file hasn't been corrupted or tampered with
-
-**"this file requires a key file (-keyfile)"** / **"this file was not encrypted with a key file"**
-- Pass `-keyfile` exactly when the file was encrypted with one; `bitseal info` shows whether it is required
-
-**"cannot infer output path: input does not end in .enc, use -out"**
-- Pass `-out <path>` to say where the decrypted file should go
-
-**"output path must differ from input path"**
-- Choose a different `-out`; Bitseal never writes over the file it is reading
-
-**"passwords do not match"**
-- The two prompts on `encrypt` differed; run the command again
-
-**"cannot read the password from stdin while the input is stdin"**
-- With `-file -`, use `-password-file` or `-password-env`
-
-**"refusing to write encrypted data to a terminal"**
-- Use `-out <file>` or redirect stdout
-
-**"unsupported encryption version"** / **"unsupported file flags"**
-- Your encrypted file uses a newer format than your Bitseal build; update Bitseal
-
-**Password input not hidden**
-- This can happen when input is redirected; Bitseal then reads the first line from stdin
+| Message | What to do |
+|---|---|
+| `decryption failed (wrong password or corrupted file)` | Check the password (and key file, if one was used). Verify the file was not corrupted or tampered with |
+| `this file requires a key file (-keyfile)` / `this file was not encrypted with a key file` | Pass `-keyfile` exactly when the file was encrypted with one. `bitseal info` shows whether it is required |
+| `cannot infer output path: input does not end in .enc, use -out` | Pass `-out <path>` to say where the decrypted file should go |
+| `output path must differ from input path` | Choose a different `-out`; Bitseal never writes over the file it is reading |
+| `passwords do not match` | The two prompts on `encrypt` differed; run the command again |
+| `cannot read the password from stdin while the input is stdin` | With `-file -`, use `-password-file` or `-password-env` |
+| `refusing to write encrypted data to a terminal` | Use `-out <file>` or redirect stdout |
+| `unsupported encryption version` / `unsupported file flags` | The file uses a newer format than your Bitseal build; update Bitseal |
+| Password input not hidden | This can happen when input is redirected; Bitseal then reads the first line from stdin |
 
 ## Development
 
@@ -271,13 +352,9 @@ make fuzz         # fuzz each target for FUZZTIME (default 20s)
 
 The suite covers both cipher versions (round trips, wrong passwords, tampering at every byte, truncation at every length, chunk reordering and duplication, golden vectors that lock the on-disk formats), the file operations (atomic writes, refusal to overwrite the input, stdin/stdout, rekey, info), every password source, the CLI in-process, and the compiled binary end to end including a real SIGINT. Fuzz targets cover the decryptors and the header parser.
 
-### Building
+### Building and formatting
 ```bash
 make build
-```
-
-### Formatting
-```bash
 go fmt ./...
 ```
 
@@ -292,7 +369,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-MIT License - see the LICENSE file for details
+MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Disclaimer
 
