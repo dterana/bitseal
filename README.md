@@ -9,7 +9,7 @@ Bitseal is a lightweight command-line utility for encrypting and decrypting file
 **Why Bitseal?**
 - 🔒 **Future-proof**: Version your encryption. Decrypt old files forever, even after updating algorithms
 - 🎯 **Simple**: Single-purpose tool focused on file encryption
-- 🔐 **Secure**: AES-256-GCM with PBKDF2 key derivation and hidden password input
+- 🔐 **Secure**: AES-256-GCM with Argon2id key derivation, per-file salts and hidden password input
 - 🚀 **Easy to extend**: Interface-based design makes adding new cipher versions trivial
 - 📦 **Minimal dependencies**: Uses only Go standard library and `golang.org/x/term` and `golang.org/x/crypto`
 
@@ -47,11 +47,15 @@ go install github.com/dterana/bitseal@latest
 ./bitseal decrypt -file secure.bin -out recovered.txt
 ```
 
+Decrypting a file that does not end in `.enc` requires `-out`, and the output path must differ from the input path. Bitseal refuses both cases instead of overwriting your encrypted file.
+
 ### Usage with pipes (non-interactive)
 ```bash
 # Password can be piped in (less secure, use only in scripts)
 echo "mypassword" | ./bitseal encrypt -file secret.txt
 ```
+
+When piped, the first line of stdin is the password. Spaces inside it are kept (`correct horse battery staple` works) and surrounding whitespace and the line ending are trimmed. Piped input is read once, so there is no confirmation prompt.
 
 ## How It Works
 
@@ -63,7 +67,11 @@ echo "mypassword" | ./bitseal encrypt -file secret.txt
 
 **Random Nonce**: Each encryption uses a fresh random 12-byte nonce, so encrypting the same file twice produces completely different output.
 
-**Password Input**: Password is read with terminal echo disabled—nothing appears on screen as you type, protecting against shoulder surfing and terminal history.
+**Password Confirmation**: On a terminal, `encrypt` asks for the password twice so a typo cannot lock you out of your own file.
+
+**Atomic Writes**: Output is written to a temporary file in the destination directory and renamed into place, so a failed run never truncates or half-writes an existing file.
+
+**Password Input**: Password is read with terminal echo disabled, so nothing appears on screen as you type, protecting against shoulder surfing and terminal history.
 
 ### File Format
 
@@ -95,25 +103,28 @@ The codebase is organized for easy maintenance and extension:
 
 1. Create a new cipher implementation in `crypto.go`:
 ```go
-type CipherV2 struct {
+type CipherV3 struct {
     version byte
     // ... new fields
 }
 
-func (c *CipherV2) Version() byte { return 2 }
-func (c *CipherV2) Encrypt(plaintext, password []byte) ([]byte, error) { /* ... */ }
-func (c *CipherV2) Decrypt(ciphertext, password []byte) ([]byte, error) { /* ... */ }
+func (c *CipherV3) Version() byte { return 3 }
+func (c *CipherV3) Encrypt(plaintext, password []byte) ([]byte, error) { /* ... */ }
+func (c *CipherV3) Decrypt(ciphertext, password []byte) ([]byte, error) { /* ... */ }
 ```
 
 2. Register it in `cipher_manager.go`:
 ```go
 ciphers: map[byte]CipherVersion{
     1: NewCipherV1(),
-    2: NewCipherV2(),  // New!
+    2: NewCipherV2(),
+    3: NewCipherV3(),  // New!
 }
 ```
 
-That's it! Files encrypted with V1 will still decrypt automatically.
+3. Set `CurrentVersion` in `cipher_manager.go` to `3` so new files use it, and add a golden vector for the new version in `crypto_test.go`.
+
+That's it! Files encrypted with older versions will still decrypt automatically.
 
 ## Security Considerations
 
@@ -151,6 +162,15 @@ rm backup.tar.gz
 - Verify the file hasn't been corrupted or tampered with
 - Ensure you're using the correct version of Bitseal
 
+**"cannot infer output path: input does not end in .enc, use -out"**
+- Pass `-out <path>` to say where the decrypted file should go
+
+**"output path must differ from input path"**
+- Choose a different `-out`; Bitseal never writes over the file it is reading
+
+**"passwords do not match"**
+- The two prompts on `encrypt` differed; run the command again
+
 **"unsupported encryption version"**
 - Your encrypted file uses a newer encryption version than your Bitseal build
 - Update Bitseal to the latest version
@@ -163,8 +183,12 @@ rm backup.tar.gz
 
 ### Running tests
 ```bash
-go test ./...
+make test         # all tests (unit + end-to-end, builds the binary)
+make test-short   # skips the large-file cases
+make test-race    # with the race detector (slow: Argon2 uses 64 MiB per key)
 ```
+
+The suite covers both cipher versions (round trips, wrong passwords, tampering, truncation, golden vectors for on-disk compatibility), file operations (output naming, permissions, atomic writes, refusal to overwrite the input) and the compiled CLI end to end.
 
 ### Building
 ```bash

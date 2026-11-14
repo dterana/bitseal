@@ -67,7 +67,7 @@ func main() {
 }
 
 func encryptCommand(inputPath, outputPath string) error {
-	password, err := readPassword()
+	password, err := readNewPassword()
 	if err != nil {
 		return fmt.Errorf("failed to read password: %w", err)
 	}
