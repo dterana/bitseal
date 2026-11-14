@@ -1,11 +1,13 @@
-.PHONY: build test clean run-encrypt run-decrypt help
+.PHONY: build test test-short test-race clean run-encrypt run-decrypt help
 
 help:
 	@echo "Bitseal - File Encryption CLI Tool"
 	@echo ""
 	@echo "Available targets:"
 	@echo "  build         - Build the bitseal binary"
-	@echo "  test          - Run tests"
+	@echo "  test          - Run all tests"
+	@echo "  test-short    - Run tests, skipping large-file cases"
+	@echo "  test-race     - Run all tests with the race detector (slow)"
 	@echo "  clean         - Remove build artifacts"
 	@echo "  run-encrypt   - Build and run encrypt demo"
 	@echo "  run-decrypt   - Build and run decrypt demo"
@@ -16,7 +18,13 @@ build:
 	go build -o bitseal
 
 test:
-	go test -v -race ./...
+	go test -v ./...
+
+test-short:
+	go test -short ./...
+
+test-race:
+	go test -race ./...
 
 clean:
 	go clean
