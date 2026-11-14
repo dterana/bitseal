@@ -2,28 +2,13 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 )
-
-func writeFile(t *testing.T, path string, data []byte) {
-	t.Helper()
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func readFile(t *testing.T, path string) []byte {
-	t.Helper()
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return b
-}
 
 func TestManagerRegistersAllVersions(t *testing.T) {
 	m := NewCipherManager()
@@ -36,8 +21,8 @@ func TestManagerRegistersAllVersions(t *testing.T) {
 			t.Fatalf("version %d mapped to cipher %d", v, c.Version())
 		}
 	}
-	if _, err := m.getCipher(CurrentVersion); err != nil {
-		t.Fatalf("CurrentVersion not registered: %v", err)
+	if _, err := m.currentCipher(); err != nil {
+		t.Fatalf("CurrentVersion not usable for streaming: %v", err)
 	}
 }
 
@@ -50,11 +35,27 @@ func TestManagerUnsupportedVersions(t *testing.T) {
 	}
 }
 
+func TestDefaultManagerUsesDefaultParameters(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join(dir, "a.txt")
+	writeFile(t, in, []byte("hello"))
+	if err := NewCipherManager().EncryptFile(in, "", sec("pw")); err != nil {
+		t.Fatal(err)
+	}
+	h, err := parseHeaderV2(readFile(t, in+".enc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.kdf != defaultKDF || h.chunkLog2 != defaultChunkLog2 {
+		t.Fatalf("default manager wrote %+v / %d", h.kdf, h.chunkLog2)
+	}
+}
+
 func TestEncryptFileDefaultsToCurrentVersion(t *testing.T) {
 	dir := t.TempDir()
 	in := filepath.Join(dir, "a.txt")
 	writeFile(t, in, []byte("hello"))
-	if err := NewCipherManager().EncryptFile(in, "", "pw"); err != nil {
+	if err := fastManager().EncryptFile(in, "", sec("pw")); err != nil {
 		t.Fatal(err)
 	}
 	if got := readFile(t, in+".enc")[0]; got != CurrentVersion {
@@ -66,7 +67,7 @@ func TestEncryptFileKeepsInput(t *testing.T) {
 	dir := t.TempDir()
 	in := filepath.Join(dir, "a.txt")
 	writeFile(t, in, []byte("hello"))
-	if err := NewCipherManager().EncryptFile(in, "", "pw"); err != nil {
+	if err := fastManager().EncryptFile(in, "", sec("pw")); err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(readFile(t, in), []byte("hello")) {
@@ -79,7 +80,7 @@ func TestEncryptFileCustomOutput(t *testing.T) {
 	in := filepath.Join(dir, "a.txt")
 	out := filepath.Join(dir, "custom.bin")
 	writeFile(t, in, []byte("hello"))
-	if err := NewCipherManager().EncryptFile(in, out, "pw"); err != nil {
+	if err := fastManager().EncryptFile(in, out, sec("pw")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(out); err != nil {
@@ -90,18 +91,18 @@ func TestEncryptFileCustomOutput(t *testing.T) {
 	}
 }
 
-func TestEncryptFileOutputPermissions(t *testing.T) {
+func TestOutputFilePermissions(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("unix permissions only")
 	}
 	dir := t.TempDir()
 	in := filepath.Join(dir, "a.txt")
 	writeFile(t, in, []byte("hello"))
-	m := NewCipherManager()
-	if err := m.EncryptFile(in, "", "pw"); err != nil {
+	m := fastManager()
+	if err := m.EncryptFile(in, "", sec("pw")); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.DecryptFile(in+".enc", filepath.Join(dir, "out.txt"), "pw"); err != nil {
+	if err := m.DecryptFile(in+".enc", filepath.Join(dir, "out.txt"), sec("pw")); err != nil {
 		t.Fatal(err)
 	}
 	for _, p := range []string{in + ".enc", filepath.Join(dir, "out.txt")} {
@@ -120,12 +121,12 @@ func TestEncryptFileOverwritesExistingOutput(t *testing.T) {
 	in := filepath.Join(dir, "a.txt")
 	writeFile(t, in, []byte("new"))
 	writeFile(t, in+".enc", []byte("stale"))
-	m := NewCipherManager()
-	if err := m.EncryptFile(in, "", "pw"); err != nil {
+	m := fastManager()
+	if err := m.EncryptFile(in, "", sec("pw")); err != nil {
 		t.Fatal(err)
 	}
 	out := filepath.Join(dir, "o")
-	if err := m.DecryptFile(in+".enc", out, "pw"); err != nil {
+	if err := m.DecryptFile(in+".enc", out, sec("pw")); err != nil {
 		t.Fatal(err)
 	}
 	if string(readFile(t, out)) != "new" {
@@ -135,21 +136,23 @@ func TestEncryptFileOverwritesExistingOutput(t *testing.T) {
 
 func TestEncryptFileErrors(t *testing.T) {
 	dir := t.TempDir()
-	m := NewCipherManager()
+	m := fastManager()
 	t.Run("missing input", func(t *testing.T) {
-		if err := m.EncryptFile(filepath.Join(dir, "nope"), "", "pw"); err == nil {
-			t.Fatal("expected error")
+		err := m.EncryptFile(filepath.Join(dir, "nope"), "", sec("pw"))
+		if err == nil || !strings.Contains(err.Error(), "failed to read file") {
+			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 	t.Run("input is a directory", func(t *testing.T) {
-		if err := m.EncryptFile(dir, "", "pw"); err == nil {
-			t.Fatal("expected error")
+		err := m.EncryptFile(dir, "", sec("pw"))
+		if err == nil || !strings.Contains(err.Error(), "is a directory") {
+			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 	t.Run("empty password", func(t *testing.T) {
 		in := filepath.Join(dir, "a.txt")
 		writeFile(t, in, []byte("x"))
-		if err := m.EncryptFile(in, "", ""); err == nil {
+		if err := m.EncryptFile(in, "", Secret{}); err == nil {
 			t.Fatal("expected error")
 		}
 		if _, err := os.Stat(in + ".enc"); err == nil {
@@ -159,22 +162,23 @@ func TestEncryptFileErrors(t *testing.T) {
 	t.Run("unwritable output dir", func(t *testing.T) {
 		in := filepath.Join(dir, "b.txt")
 		writeFile(t, in, []byte("x"))
-		if err := m.EncryptFile(in, filepath.Join(dir, "missing", "out.enc"), "pw"); err == nil {
+		if err := m.EncryptFile(in, filepath.Join(dir, "missing", "out.enc"), sec("pw")); err == nil {
 			t.Fatal("expected error")
 		}
 	})
+	noTempLeftovers(t, dir)
 }
 
 func TestDecryptFileDefaultOutputStripsEnc(t *testing.T) {
 	dir := t.TempDir()
-	m := NewCipherManager()
+	m := fastManager()
 	in := filepath.Join(dir, "notes.txt")
 	writeFile(t, in, []byte("hello"))
-	if err := m.EncryptFile(in, "", "pw"); err != nil {
+	if err := m.EncryptFile(in, "", sec("pw")); err != nil {
 		t.Fatal(err)
 	}
 	os.Remove(in)
-	if err := m.DecryptFile(in+".enc", "", "pw"); err != nil {
+	if err := m.DecryptFile(in+".enc", "", sec("pw")); err != nil {
 		t.Fatal(err)
 	}
 	if string(readFile(t, in)) != "hello" {
@@ -184,12 +188,12 @@ func TestDecryptFileDefaultOutputStripsEnc(t *testing.T) {
 
 func TestDecryptFileNonEncExtensionRequiresOut(t *testing.T) {
 	dir := t.TempDir()
-	m := NewCipherManager()
-	enc, _ := NewCipherV2().Encrypt([]byte("hello"), []byte("pw"))
+	m := fastManager()
+	enc, _ := fastV2().Encrypt([]byte("hello"), sec("pw"))
 	in := filepath.Join(dir, "blob.bin")
 	writeFile(t, in, enc)
 
-	err := m.DecryptFile(in, "", "pw")
+	err := m.DecryptFile(in, "", sec("pw"))
 	if err == nil || !strings.Contains(err.Error(), "use -out") {
 		t.Fatalf("expected inference error, got %v", err)
 	}
@@ -198,7 +202,7 @@ func TestDecryptFileNonEncExtensionRequiresOut(t *testing.T) {
 	}
 
 	out := filepath.Join(dir, "blob.txt")
-	if err := m.DecryptFile(in, out, "pw"); err != nil {
+	if err := m.DecryptFile(in, out, sec("pw")); err != nil {
 		t.Fatal(err)
 	}
 	if string(readFile(t, out)) != "hello" {
@@ -208,27 +212,25 @@ func TestDecryptFileNonEncExtensionRequiresOut(t *testing.T) {
 
 func TestOutputMustDifferFromInput(t *testing.T) {
 	dir := t.TempDir()
-	m := NewCipherManager()
+	m := fastManager()
 	in := filepath.Join(dir, "a.txt")
 	writeFile(t, in, []byte("hello"))
 
-	if err := m.EncryptFile(in, in, "pw"); err == nil {
+	if err := m.EncryptFile(in, in, sec("pw")); err == nil {
 		t.Fatal("encrypt must refuse output == input")
 	}
 	if string(readFile(t, in)) != "hello" {
 		t.Fatal("input was clobbered")
 	}
-
-	// same file through a different spelling of the path
-	if err := m.EncryptFile(in, filepath.Join(dir, ".", "a.txt"), "pw"); err == nil {
+	if err := m.EncryptFile(in, filepath.Join(dir, ".", "a.txt"), sec("pw")); err == nil {
 		t.Fatal("encrypt must refuse equivalent paths")
 	}
 
-	if err := m.EncryptFile(in, "", "pw"); err != nil {
+	if err := m.EncryptFile(in, "", sec("pw")); err != nil {
 		t.Fatal(err)
 	}
 	enc := readFile(t, in+".enc")
-	if err := m.DecryptFile(in+".enc", in+".enc", "pw"); err == nil {
+	if err := m.DecryptFile(in+".enc", in+".enc", sec("pw")); err == nil {
 		t.Fatal("decrypt must refuse output == input")
 	}
 	if !bytes.Equal(readFile(t, in+".enc"), enc) {
@@ -247,7 +249,7 @@ func TestOutputMustDifferFromInputViaSymlink(t *testing.T) {
 	if err := os.Symlink(in, link); err != nil {
 		t.Skip("symlink unsupported")
 	}
-	if err := NewCipherManager().EncryptFile(in, link, "pw"); err == nil {
+	if err := fastManager().EncryptFile(in, link, sec("pw")); err == nil {
 		t.Fatal("encrypt must refuse a symlink to the input as output")
 	}
 	if string(readFile(t, in)) != "hello" {
@@ -255,14 +257,604 @@ func TestOutputMustDifferFromInputViaSymlink(t *testing.T) {
 	}
 }
 
-func tempLeftovers(t *testing.T, dir string) []string {
+func TestDecryptFileWrongPasswordLeavesNoOutput(t *testing.T) {
+	dir := t.TempDir()
+	m := fastManager()
+	in := filepath.Join(dir, "a.txt")
+	writeFile(t, in, []byte("hello"))
+	if err := m.EncryptFile(in, "", sec("right")); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "out.txt")
+	if err := m.DecryptFile(in+".enc", out, sec("wrong")); err == nil {
+		t.Fatal("expected failure")
+	}
+	if _, err := os.Stat(out); err == nil {
+		t.Fatal("no plaintext output may exist after a failed decrypt")
+	}
+	noTempLeftovers(t, dir)
+}
+
+func TestDecryptFileWrongPasswordKeepsExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	m := fastManager()
+	in := filepath.Join(dir, "a.txt")
+	writeFile(t, in, []byte("hello"))
+	if err := m.EncryptFile(in, "", sec("right")); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.DecryptFile(in+".enc", "", sec("wrong")); err == nil {
+		t.Fatal("expected failure")
+	}
+	if string(readFile(t, in)) != "hello" {
+		t.Fatal("existing file was clobbered by a failed decrypt")
+	}
+}
+
+// A file corrupted deep inside must not leave a partial plaintext behind,
+// even though earlier chunks decrypted fine.
+func TestDecryptFileCorruptLaterChunkLeavesNoOutput(t *testing.T) {
+	dir := t.TempDir()
+	m := newCipherManagerWith(fastKDF, tinyChunk)
+	in := filepath.Join(dir, "a.bin")
+	writeFile(t, in, pattern(500))
+	if err := m.EncryptFile(in, "", sec("pw")); err != nil {
+		t.Fatal(err)
+	}
+	enc := readFile(t, in+".enc")
+	enc[len(enc)-20] ^= 0x01
+	writeFile(t, in+".enc", enc)
+
+	out := filepath.Join(dir, "out.bin")
+	if err := m.DecryptFile(in+".enc", out, sec("pw")); err == nil {
+		t.Fatal("expected failure")
+	}
+	if _, err := os.Stat(out); err == nil {
+		t.Fatal("partial plaintext left behind")
+	}
+	noTempLeftovers(t, dir)
+}
+
+func TestDecryptFileErrors(t *testing.T) {
+	dir := t.TempDir()
+	m := fastManager()
+	out := filepath.Join(dir, "out")
+
+	cases := map[string][]byte{
+		"empty file":          {},
+		"unknown version 0":   append([]byte{0}, make([]byte, 64)...),
+		"unknown version 3":   append([]byte{3}, make([]byte, 64)...),
+		"unknown version 255": append([]byte{255}, make([]byte, 64)...),
+		"plain text file":     []byte("this is not an encrypted file at all, really"),
+		"version only v1":     {1},
+		"version only v2":     {2},
+		"v2 header only":      fastV2().headerOnlyForTest(),
+	}
+	for name, data := range cases {
+		t.Run(name, func(t *testing.T) {
+			in := filepath.Join(dir, "in.enc")
+			writeFile(t, in, data)
+			if err := m.DecryptFile(in, out, sec("pw")); err == nil {
+				t.Fatal("expected error")
+			}
+			if _, err := os.Stat(out); err == nil {
+				t.Fatal("no output may be written on failure")
+			}
+		})
+	}
+
+	t.Run("missing input", func(t *testing.T) {
+		if err := m.DecryptFile(filepath.Join(dir, "nope.enc"), out, sec("pw")); err == nil {
+			t.Fatal("expected error")
+		}
+	})
+	t.Run("input is a directory", func(t *testing.T) {
+		if err := m.DecryptFile(dir, out, sec("pw")); err == nil {
+			t.Fatal("expected error")
+		}
+	})
+	t.Run("unwritable output dir", func(t *testing.T) {
+		in := filepath.Join(dir, "ok.txt")
+		writeFile(t, in, []byte("x"))
+		if err := m.EncryptFile(in, "", sec("pw")); err != nil {
+			t.Fatal(err)
+		}
+		if err := m.DecryptFile(in+".enc", filepath.Join(dir, "missing", "o"), sec("pw")); err == nil {
+			t.Fatal("expected error")
+		}
+	})
+	noTempLeftovers(t, dir)
+}
+
+// headerOnlyForTest returns a valid V2 header with no chunks.
+func (c *CipherV2) headerOnlyForTest() []byte {
+	enc, _ := c.Encrypt(nil, sec("pw"))
+	return enc[:headerSizeV2]
+}
+
+func TestUnsupportedVersionErrorMessage(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join(dir, "in.enc")
+	writeFile(t, in, append([]byte{42}, make([]byte, 64)...))
+	err := fastManager().DecryptFile(in, filepath.Join(dir, "o"), sec("pw"))
+	if err == nil || err.Error() != "unsupported encryption version: 42" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDecryptFileRoutesByVersionByte(t *testing.T) {
+	dir := t.TempDir()
+	m := fastManager()
+	for name, c := range allCiphers() {
+		t.Run(name, func(t *testing.T) {
+			enc, err := c.Encrypt([]byte("routed"), sec("pw"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			in := filepath.Join(dir, name+".enc")
+			out := filepath.Join(dir, name+".txt")
+			writeFile(t, in, enc)
+			if err := m.DecryptFile(in, out, sec("pw")); err != nil {
+				t.Fatal(err)
+			}
+			if string(readFile(t, out)) != "routed" {
+				t.Fatal("wrong plaintext")
+			}
+		})
+	}
+}
+
+func TestDecryptGoldenFiles(t *testing.T) {
+	dir := t.TempDir()
+	m := fastManager()
+	cases := []struct {
+		name, hex string
+		secret    Secret
+		want      string
+	}{
+		{"v1", goldenV1Hex, sec(goldenPassword), goldenPlaintext},
+		{"v2", goldenV2Hex, sec(goldenPassword), goldenPlaintext},
+		{"v2 multi", goldenV2MultiHex, sec(goldenPassword), goldenMultiPlaintext},
+		{"v2 boundary", goldenV2BoundaryHex, sec(goldenPassword), goldenBoundaryPlaintext},
+		{"v2 key file", goldenV2KeyFileHex, secKF(goldenPassword, goldenKeyFile), goldenPlaintext},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			in := filepath.Join(dir, strings.ReplaceAll(tc.name, " ", "_")+".enc")
+			out := in + ".txt"
+			writeFile(t, in, mustHex(t, tc.hex))
+			if err := m.DecryptFile(in, out, tc.secret); err != nil {
+				t.Fatal(err)
+			}
+			if string(readFile(t, out)) != tc.want {
+				t.Fatal("wrong plaintext")
+			}
+		})
+	}
+}
+
+func TestFileRoundTripEdgeCases(t *testing.T) {
+	m := newCipherManagerWith(fastKDF, 8)
+	cases := map[string][]byte{
+		"empty":        {},
+		"binary":       {0x00, 0xff, 0x10, 0x80},
+		"one chunk":    pattern(256),
+		"chunk + 1":    pattern(257),
+		"many chunks":  pattern(256*50 + 3),
+		"exact chunks": pattern(256 * 4),
+	}
+	for name, content := range cases {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			in := filepath.Join(dir, "f")
+			writeFile(t, in, content)
+			if err := m.EncryptFile(in, "", sec("pw")); err != nil {
+				t.Fatal(err)
+			}
+			out := filepath.Join(dir, "g")
+			if err := m.DecryptFile(in+".enc", out, sec("pw")); err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(readFile(t, out), content) {
+				t.Fatal("content mismatch")
+			}
+		})
+	}
+}
+
+func TestLargeFileRoundTripDefaultChunk(t *testing.T) {
+	if testing.Short() {
+		t.Skip("large file skipped in short mode")
+	}
+	m := newCipherManagerWith(fastKDF, defaultChunkLog2)
+	dir := t.TempDir()
+	in := filepath.Join(dir, "big")
+	content := pattern(3<<20 + 123)
+	writeFile(t, in, content)
+	if err := m.EncryptFile(in, "", sec("pw")); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "big.out")
+	if err := m.DecryptFile(in+".enc", out, sec("pw")); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(readFile(t, out), content) {
+		t.Fatal("content mismatch")
+	}
+}
+
+func TestFilenamesWithSpacesAndUnicode(t *testing.T) {
+	dir := t.TempDir()
+	m := fastManager()
+	in := filepath.Join(dir, "my secret é日本.txt")
+	writeFile(t, in, []byte("hi"))
+	if err := m.EncryptFile(in, "", sec("pw")); err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(in)
+	if err := m.DecryptFile(in+".enc", "", sec("pw")); err != nil {
+		t.Fatal(err)
+	}
+	if string(readFile(t, in)) != "hi" {
+		t.Fatal("mismatch")
+	}
+}
+
+func TestKeyFileFileRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	m := fastManager()
+	in := filepath.Join(dir, "a.txt")
+	writeFile(t, in, []byte("hello"))
+	if err := m.EncryptFile(in, "", secKF("pw", "kf")); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.DecryptFile(in+".enc", filepath.Join(dir, "x"), sec("pw")); err == nil {
+		t.Fatal("decrypt without the key file must fail")
+	}
+	if err := m.DecryptFile(in+".enc", filepath.Join(dir, "y"), secKF("pw", "kf")); err != nil {
+		t.Fatal(err)
+	}
+	if string(readFile(t, filepath.Join(dir, "y"))) != "hello" {
+		t.Fatal("mismatch")
+	}
+	noTempLeftovers(t, dir)
+}
+
+// ----------------------------------------------------------------------------
+// stdin / stdout
+// ----------------------------------------------------------------------------
+
+func TestEncryptStdinToFileAndBack(t *testing.T) {
+	dir := t.TempDir()
+	m := fastManager()
+	std := captureStdio(t, "from stdin")
+	enc := filepath.Join(dir, "s.enc")
+	if err := m.EncryptFile(stdioPath, enc, sec("pw")); err != nil {
+		t.Fatal(err)
+	}
+	if std.out.Len() != 0 {
+		t.Fatal("nothing may be written to stdout when -out is a file")
+	}
+	out := filepath.Join(dir, "s.txt")
+	if err := m.DecryptFile(enc, out, sec("pw")); err != nil {
+		t.Fatal(err)
+	}
+	if string(readFile(t, out)) != "from stdin" {
+		t.Fatal("mismatch")
+	}
+}
+
+func TestEncryptStdinDefaultsToStdout(t *testing.T) {
+	m := fastManager()
+	std := captureStdio(t, "payload")
+	if err := m.EncryptFile(stdioPath, "", sec("pw")); err != nil {
+		t.Fatal(err)
+	}
+	dec, err := fastV2().Decrypt(std.out.Bytes(), sec("pw"))
+	if err != nil || string(dec) != "payload" {
+		t.Fatalf("stdout does not hold a valid encrypted file: %v", err)
+	}
+}
+
+func TestEncryptToTerminalRefused(t *testing.T) {
+	dir := t.TempDir()
+	m := fastManager()
+	in := filepath.Join(dir, "a.txt")
+	writeFile(t, in, []byte("x"))
+	std := captureStdio(t, "")
+	stdoutIsTerminal = func() bool { return true }
+	err := m.EncryptFile(in, stdioPath, sec("pw"))
+	if err == nil || !strings.Contains(err.Error(), "terminal") {
+		t.Fatalf("unexpected: %v", err)
+	}
+	if std.out.Len() != 0 {
+		t.Fatal("binary data written to a terminal")
+	}
+}
+
+func TestDecryptToStdout(t *testing.T) {
+	dir := t.TempDir()
+	m := fastManager()
+	in := filepath.Join(dir, "a.txt")
+	writeFile(t, in, []byte("secret value"))
+	if err := m.EncryptFile(in, "", sec("pw")); err != nil {
+		t.Fatal(err)
+	}
+	std := captureStdio(t, "")
+	if err := m.DecryptFile(in+".enc", stdioPath, sec("pw")); err != nil {
+		t.Fatal(err)
+	}
+	if std.out.String() != "secret value" {
+		t.Fatalf("stdout = %q", std.out.String())
+	}
+}
+
+func TestDecryptStdinDefaultsToStdout(t *testing.T) {
+	enc, _ := fastV2().Encrypt([]byte("via pipe"), sec("pw"))
+	std := captureStdio(t, string(enc))
+	if err := fastManager().DecryptFile(stdioPath, "", sec("pw")); err != nil {
+		t.Fatal(err)
+	}
+	if std.out.String() != "via pipe" {
+		t.Fatalf("stdout = %q", std.out.String())
+	}
+}
+
+// Plaintext must reach stdout only after the whole file authenticated.
+func TestDecryptToStdoutIsAllOrNothing(t *testing.T) {
+	m := newCipherManagerWith(fastKDF, tinyChunk)
+	enc, _ := newCipherV2With(fastKDF, tinyChunk).Encrypt(pattern(500), sec("pw"))
+	enc[len(enc)-20] ^= 0x01 // corrupt a late chunk
+	std := captureStdio(t, string(enc))
+	if err := m.DecryptFile(stdioPath, stdioPath, sec("pw")); err == nil {
+		t.Fatal("expected failure")
+	}
+	if std.out.Len() != 0 {
+		t.Fatalf("%d plaintext bytes reached stdout before authentication finished", std.out.Len())
+	}
+}
+
+func TestDecryptV1ToStdout(t *testing.T) {
+	std := captureStdio(t, string(mustHex(t, goldenV1Hex)))
+	if err := fastManager().DecryptFile(stdioPath, "", sec(goldenPassword)); err != nil {
+		t.Fatal(err)
+	}
+	if std.out.String() != goldenPlaintext {
+		t.Fatalf("stdout = %q", std.out.String())
+	}
+}
+
+// ----------------------------------------------------------------------------
+// Rekey
+// ----------------------------------------------------------------------------
+
+func writeV1File(t *testing.T, path, content, pw string) {
 	t.Helper()
-	matches, err := filepath.Glob(filepath.Join(dir, ".bitseal-*.tmp"))
+	enc, err := NewCipherV1().Encrypt([]byte(content), sec(pw))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return matches
+	writeFile(t, path, enc)
 }
+
+func decryptedContent(t *testing.T, m *CipherManager, path string, s Secret) (string, error) {
+	t.Helper()
+	out := filepath.Join(t.TempDir(), "plain")
+	if err := m.DecryptFile(path, out, s); err != nil {
+		return "", err
+	}
+	return string(readFile(t, out)), nil
+}
+
+func TestRekeyUpgradesV1InPlace(t *testing.T) {
+	dir := t.TempDir()
+	m := fastManager()
+	f := filepath.Join(dir, "legacy.enc")
+	writeV1File(t, f, "legacy secret", "pw")
+
+	if err := m.RekeyFile(f, "", sec("pw"), sec("pw")); err != nil {
+		t.Fatal(err)
+	}
+	if readFile(t, f)[0] != 2 {
+		t.Fatal("file should now be V2")
+	}
+	got, err := decryptedContent(t, m, f, sec("pw"))
+	if err != nil || got != "legacy secret" {
+		t.Fatalf("content = %q, %v", got, err)
+	}
+	noTempLeftovers(t, dir)
+}
+
+func TestRekeyV2GetsFreshSalt(t *testing.T) {
+	dir := t.TempDir()
+	m := fastManager()
+	f := filepath.Join(dir, "a.enc")
+	enc, _ := fastV2().Encrypt([]byte("x"), sec("pw"))
+	writeFile(t, f, enc)
+
+	if err := m.RekeyFile(f, "", sec("pw"), sec("pw")); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := parseHeaderV2(enc)
+	after, _ := parseHeaderV2(readFile(t, f))
+	if before.salt == after.salt {
+		t.Fatal("rekey must use a fresh salt")
+	}
+}
+
+func TestRekeyToDifferentOutputKeepsInput(t *testing.T) {
+	dir := t.TempDir()
+	m := fastManager()
+	in, out := filepath.Join(dir, "a.enc"), filepath.Join(dir, "b.enc")
+	writeV1File(t, in, "data", "pw")
+	before := readFile(t, in)
+
+	if err := m.RekeyFile(in, out, sec("pw"), sec("pw")); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(readFile(t, in), before) {
+		t.Fatal("input must be untouched when -out is given")
+	}
+	if got, err := decryptedContent(t, m, out, sec("pw")); err != nil || got != "data" {
+		t.Fatalf("%q, %v", got, err)
+	}
+}
+
+func TestRekeyChangesPasswordAndKeyFile(t *testing.T) {
+	dir := t.TempDir()
+	m := fastManager()
+	f := filepath.Join(dir, "a.enc")
+	writeV1File(t, f, "data", "old")
+
+	// add a key file and change the password at once
+	if err := m.RekeyFile(f, "", sec("old"), secKF("new", "kf")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := decryptedContent(t, m, f, sec("old")); err == nil {
+		t.Fatal("old password must stop working")
+	}
+	if got, err := decryptedContent(t, m, f, secKF("new", "kf")); err != nil || got != "data" {
+		t.Fatalf("%q, %v", got, err)
+	}
+
+	// and remove the key file again
+	if err := m.RekeyFile(f, "", secKF("new", "kf"), sec("new")); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := decryptedContent(t, m, f, sec("new")); err != nil || got != "data" {
+		t.Fatalf("%q, %v", got, err)
+	}
+	noTempLeftovers(t, dir)
+}
+
+func TestRekeyFailureLeavesOriginalIntact(t *testing.T) {
+	dir := t.TempDir()
+	m := fastManager()
+	f := filepath.Join(dir, "a.enc")
+	writeV1File(t, f, "data", "right")
+	orig := readFile(t, f)
+
+	t.Run("wrong current password", func(t *testing.T) {
+		err := m.RekeyFile(f, "", sec("wrong"), sec("new"))
+		if err == nil || !strings.Contains(err.Error(), "decryption failed") {
+			t.Fatalf("unexpected: %v", err)
+		}
+	})
+	t.Run("empty new password", func(t *testing.T) {
+		if err := m.RekeyFile(f, "", sec("right"), Secret{}); err == nil {
+			t.Fatal("expected error")
+		}
+	})
+	if !bytes.Equal(readFile(t, f), orig) {
+		t.Fatal("original file was modified by a failed rekey")
+	}
+	noTempLeftovers(t, dir)
+}
+
+func TestRekeyCorruptSourceReportsDecryptErrorAndKeepsFile(t *testing.T) {
+	dir := t.TempDir()
+	m := newCipherManagerWith(fastKDF, tinyChunk)
+	f := filepath.Join(dir, "a.enc")
+	enc, _ := newCipherV2With(fastKDF, tinyChunk).Encrypt(pattern(500), sec("pw"))
+	enc[len(enc)-20] ^= 0x01
+	writeFile(t, f, enc)
+
+	err := m.RekeyFile(f, "", sec("pw"), sec("pw"))
+	if err == nil || !strings.Contains(err.Error(), "decryption failed") {
+		t.Fatalf("want the decryption error, got %v", err)
+	}
+	if !bytes.Equal(readFile(t, f), enc) {
+		t.Fatal("original file was modified")
+	}
+	noTempLeftovers(t, dir)
+}
+
+func TestRekeyMultiChunkFile(t *testing.T) {
+	dir := t.TempDir()
+	m := newCipherManagerWith(fastKDF, tinyChunk)
+	f := filepath.Join(dir, "a.enc")
+	enc, _ := newCipherV2With(fastKDF, 5).Encrypt(pattern(1000), sec("pw"))
+	writeFile(t, f, enc)
+
+	if err := m.RekeyFile(f, "", sec("pw"), sec("pw2")); err != nil {
+		t.Fatal(err)
+	}
+	h, _ := parseHeaderV2(readFile(t, f))
+	if h.chunkLog2 != tinyChunk {
+		t.Fatalf("rekey should adopt the manager's current chunk size, got %d", h.chunkLog2)
+	}
+	out := filepath.Join(dir, "out")
+	if err := m.DecryptFile(f, out, sec("pw2")); err != nil || !bytes.Equal(readFile(t, out), pattern(1000)) {
+		t.Fatalf("content lost: %v", err)
+	}
+}
+
+func TestRekeyRefusesStdioAndMissingFiles(t *testing.T) {
+	dir := t.TempDir()
+	m := fastManager()
+	if err := m.RekeyFile(stdioPath, "", sec("pw"), sec("pw")); err == nil {
+		t.Fatal("stdin must be refused")
+	}
+	if err := m.RekeyFile(filepath.Join(dir, "a"), stdioPath, sec("pw"), sec("pw")); err == nil {
+		t.Fatal("stdout must be refused")
+	}
+	if err := m.RekeyFile(filepath.Join(dir, "missing"), "", sec("pw"), sec("pw")); err == nil {
+		t.Fatal("missing file must fail")
+	}
+	f := filepath.Join(dir, "plain.enc")
+	writeFile(t, f, []byte{})
+	if err := m.RekeyFile(f, "", sec("pw"), sec("pw")); err == nil {
+		t.Fatal("empty file must fail")
+	}
+}
+
+// ----------------------------------------------------------------------------
+// Inspect
+// ----------------------------------------------------------------------------
+
+func TestInspectFile(t *testing.T) {
+	dir := t.TempDir()
+	m := fastManager()
+
+	v1 := filepath.Join(dir, "v1.enc")
+	writeFile(t, v1, mustHex(t, goldenV1Hex))
+	if info, err := m.InspectFile(v1); err != nil || info.Version != 1 || !info.Legacy {
+		t.Fatalf("%+v, %v", info, err)
+	}
+
+	v2 := filepath.Join(dir, "v2.enc")
+	writeFile(t, v2, mustHex(t, goldenV2KeyFileHex))
+	info, err := m.InspectFile(v2)
+	if err != nil || info.Version != 2 || !info.KeyFile || info.ChunkSize != 64 {
+		t.Fatalf("%+v, %v", info, err)
+	}
+
+	empty := filepath.Join(dir, "empty.enc")
+	writeFile(t, empty, nil)
+	if _, err := m.InspectFile(empty); err == nil {
+		t.Fatal("empty file must fail")
+	}
+	bad := filepath.Join(dir, "bad.enc")
+	writeFile(t, bad, []byte{9, 9, 9})
+	if _, err := m.InspectFile(bad); err == nil || !strings.Contains(err.Error(), "unsupported encryption version") {
+		t.Fatalf("unexpected: %v", err)
+	}
+	if _, err := m.InspectFile(filepath.Join(dir, "missing")); err == nil {
+		t.Fatal("missing file must fail")
+	}
+}
+
+func TestInspectStdin(t *testing.T) {
+	captureStdio(t, string(mustHex(t, goldenV2Hex)))
+	info, err := fastManager().InspectFile(stdioPath)
+	if err != nil || info.Version != 2 || info.ChunkSize != 1<<16 {
+		t.Fatalf("%+v, %v", info, err)
+	}
+}
+
+// ----------------------------------------------------------------------------
+// Atomic writes and temp file tracking
+// ----------------------------------------------------------------------------
 
 func TestWriteFileAtomicCreatesAndReplaces(t *testing.T) {
 	dir := t.TempDir()
@@ -282,9 +874,7 @@ func TestWriteFileAtomicCreatesAndReplaces(t *testing.T) {
 			t.Fatalf("mode = %v", fi.Mode().Perm())
 		}
 	}
-	if l := tempLeftovers(t, dir); len(l) != 0 {
-		t.Fatalf("temp files left behind: %v", l)
-	}
+	noTempLeftovers(t, dir)
 }
 
 func TestWriteFileAtomicTightensExistingPermissions(t *testing.T) {
@@ -324,227 +914,69 @@ func TestWriteFileAtomicFailureKeepsExistingAndCleansUp(t *testing.T) {
 		if string(readFile(t, filepath.Join(target, "keep"))) != "keep" {
 			t.Fatal("existing target was damaged")
 		}
-		if l := tempLeftovers(t, dir); len(l) != 0 {
-			t.Fatalf("temp files left behind: %v", l)
+		noTempLeftovers(t, dir)
+	})
+
+	t.Run("callback error keeps the existing file", func(t *testing.T) {
+		path := filepath.Join(dir, "keepme")
+		writeFile(t, path, []byte("original"))
+		err := writeAtomicWith(path, 0600, func(w io.Writer) error {
+			w.Write([]byte("partial"))
+			return os.ErrInvalid
+		})
+		if err != os.ErrInvalid {
+			t.Fatalf("callback error must be returned unchanged, got %v", err)
 		}
+		if string(readFile(t, path)) != "original" {
+			t.Fatal("existing file was modified by a failed write")
+		}
+		noTempLeftovers(t, dir)
 	})
 }
 
-func TestFileOpsLeaveNoTempFiles(t *testing.T) {
+func TestTempFilesAreTrackedWhileWriting(t *testing.T) {
 	dir := t.TempDir()
-	m := NewCipherManager()
-	in := filepath.Join(dir, "a.txt")
-	writeFile(t, in, []byte("hello"))
-	if err := m.EncryptFile(in, "", "pw"); err != nil {
-		t.Fatal(err)
-	}
-	if err := m.DecryptFile(in+".enc", filepath.Join(dir, "b.txt"), "pw"); err != nil {
-		t.Fatal(err)
-	}
-	if err := m.DecryptFile(in+".enc", filepath.Join(dir, "c.txt"), "wrong"); err == nil {
-		t.Fatal("expected failure")
-	}
-	if l := tempLeftovers(t, dir); len(l) != 0 {
-		t.Fatalf("temp files left behind: %v", l)
-	}
-}
-
-func TestDecryptFileWrongPasswordLeavesNoOutput(t *testing.T) {
-	dir := t.TempDir()
-	m := NewCipherManager()
-	in := filepath.Join(dir, "a.txt")
-	writeFile(t, in, []byte("hello"))
-	if err := m.EncryptFile(in, "", "right"); err != nil {
-		t.Fatal(err)
-	}
-	out := filepath.Join(dir, "out.txt")
-	if err := m.DecryptFile(in+".enc", out, "wrong"); err == nil {
-		t.Fatal("expected failure")
-	}
-	if _, err := os.Stat(out); err == nil {
-		t.Fatal("no plaintext output may exist after a failed decrypt")
-	}
-}
-
-func TestDecryptFileWrongPasswordKeepsExistingFile(t *testing.T) {
-	dir := t.TempDir()
-	m := NewCipherManager()
-	in := filepath.Join(dir, "a.txt")
-	writeFile(t, in, []byte("hello"))
-	if err := m.EncryptFile(in, "", "right"); err != nil {
-		t.Fatal(err)
-	}
-	// plaintext "a.txt" still exists and must survive a failed decrypt
-	if err := m.DecryptFile(in+".enc", "", "wrong"); err == nil {
-		t.Fatal("expected failure")
-	}
-	if string(readFile(t, in)) != "hello" {
-		t.Fatal("existing file was clobbered by a failed decrypt")
-	}
-}
-
-func TestDecryptFileErrors(t *testing.T) {
-	dir := t.TempDir()
-	m := NewCipherManager()
-	out := filepath.Join(dir, "out")
-
-	cases := map[string][]byte{
-		"empty file":          {},
-		"unknown version 0":   append([]byte{0}, make([]byte, 64)...),
-		"unknown version 3":   append([]byte{3}, make([]byte, 64)...),
-		"unknown version 255": append([]byte{255}, make([]byte, 64)...),
-		"plain text file":     []byte("this is not an encrypted file at all, really"),
-		"version only v1":     {1},
-		"version only v2":     {2},
-	}
-	for name, data := range cases {
-		t.Run(name, func(t *testing.T) {
-			in := filepath.Join(dir, "in.enc")
-			writeFile(t, in, data)
-			if err := m.DecryptFile(in, out, "pw"); err == nil {
-				t.Fatal("expected error")
-			}
-			if _, err := os.Stat(out); err == nil {
-				t.Fatal("no output may be written on failure")
-			}
-		})
-	}
-
-	t.Run("missing input", func(t *testing.T) {
-		if err := m.DecryptFile(filepath.Join(dir, "nope.enc"), out, "pw"); err == nil {
-			t.Fatal("expected error")
+	path := filepath.Join(dir, "f")
+	var during []string
+	err := writeAtomicWith(path, 0600, func(w io.Writer) error {
+		during = tempLeftovers(t, dir)
+		temps.mu.Lock()
+		tracked := len(temps.paths)
+		temps.mu.Unlock()
+		if tracked == 0 {
+			t.Error("temp file not registered for signal cleanup")
 		}
+		return nil
 	})
-	t.Run("unwritable output dir", func(t *testing.T) {
-		in := filepath.Join(dir, "ok.txt")
-		writeFile(t, in, []byte("x"))
-		if err := m.EncryptFile(in, "", "pw"); err != nil {
-			t.Fatal(err)
-		}
-		if err := m.DecryptFile(in+".enc", filepath.Join(dir, "missing", "o"), "pw"); err == nil {
-			t.Fatal("expected error")
-		}
-	})
-}
-
-func TestUnsupportedVersionErrorMessage(t *testing.T) {
-	dir := t.TempDir()
-	in := filepath.Join(dir, "in.enc")
-	writeFile(t, in, append([]byte{42}, make([]byte, 64)...))
-	err := NewCipherManager().DecryptFile(in, filepath.Join(dir, "o"), "pw")
-	if err == nil || err.Error() != "unsupported encryption version: 42" {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestDecryptFileRoutesByVersionByte(t *testing.T) {
-	dir := t.TempDir()
-	m := NewCipherManager()
-	for name, c := range allCiphers() {
-		t.Run(name, func(t *testing.T) {
-			enc, err := c.Encrypt([]byte("routed"), []byte("pw"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			in := filepath.Join(dir, name+".enc")
-			out := filepath.Join(dir, name+".txt")
-			writeFile(t, in, enc)
-			if err := m.DecryptFile(in, out, "pw"); err != nil {
-				t.Fatal(err)
-			}
-			if string(readFile(t, out)) != "routed" {
-				t.Fatal("wrong plaintext")
-			}
-		})
-	}
-}
-
-func TestDecryptGoldenFiles(t *testing.T) {
-	dir := t.TempDir()
-	m := NewCipherManager()
-	for name, h := range map[string]string{"v1": goldenV1Hex, "v2": goldenV2Hex} {
-		t.Run(name, func(t *testing.T) {
-			in := filepath.Join(dir, name+".enc")
-			out := filepath.Join(dir, name+".txt")
-			writeFile(t, in, mustHex(t, h))
-			if err := m.DecryptFile(in, out, "golden-pw"); err != nil {
-				t.Fatal(err)
-			}
-			if string(readFile(t, out)) != "golden plaintext" {
-				t.Fatal("wrong plaintext")
-			}
-		})
-	}
-}
-
-func TestFileRoundTripEdgeCases(t *testing.T) {
-	m := NewCipherManager()
-	cases := map[string][]byte{
-		"empty":  {},
-		"binary": {0x00, 0xff, 0x10, 0x80},
-	}
-	if !testing.Short() {
-		cases["big"] = bytes.Repeat([]byte("0123456789abcdef"), 1<<16) // 1 MiB
-	}
-	for name, content := range cases {
-		t.Run(name, func(t *testing.T) {
-			dir := t.TempDir()
-			in := filepath.Join(dir, "f")
-			writeFile(t, in, content)
-			if err := m.EncryptFile(in, "", "pw"); err != nil {
-				t.Fatal(err)
-			}
-			out := filepath.Join(dir, "g")
-			if err := m.DecryptFile(in+".enc", out, "pw"); err != nil {
-				t.Fatal(err)
-			}
-			if !bytes.Equal(readFile(t, out), content) {
-				t.Fatal("content mismatch")
-			}
-		})
-	}
-}
-
-func TestReencryptUpgradesV1ToV2(t *testing.T) {
-	dir := t.TempDir()
-	m := NewCipherManager()
-	v1, _ := NewCipherV1().Encrypt([]byte("legacy"), []byte("pw"))
-	legacy := filepath.Join(dir, "x.enc")
-	writeFile(t, legacy, v1)
-
-	plain := filepath.Join(dir, "x")
-	if err := m.DecryptFile(legacy, plain, "pw"); err != nil {
+	if err != nil {
 		t.Fatal(err)
 	}
-	upgraded := filepath.Join(dir, "x.v2.enc")
-	if err := m.EncryptFile(plain, upgraded, "pw"); err != nil {
-		t.Fatal(err)
+	if len(during) != 1 {
+		t.Fatalf("expected one temp file during the write, got %v", during)
 	}
-	if readFile(t, upgraded)[0] != 2 {
-		t.Fatal("re-encrypted file should be V2")
-	}
-	out := filepath.Join(dir, "y")
-	if err := m.DecryptFile(upgraded, out, "pw"); err != nil {
-		t.Fatal(err)
-	}
-	if string(readFile(t, out)) != "legacy" {
-		t.Fatal("content lost during upgrade")
+	temps.mu.Lock()
+	left := len(temps.paths)
+	temps.mu.Unlock()
+	if left != 0 {
+		t.Fatal("temp file still registered after success")
 	}
 }
 
-func TestFilenamesWithSpacesAndUnicode(t *testing.T) {
+func TestRemoveTrackedTemps(t *testing.T) {
 	dir := t.TempDir()
-	m := NewCipherManager()
-	in := filepath.Join(dir, "my secret é日本.txt")
-	writeFile(t, in, []byte("hi"))
-	if err := m.EncryptFile(in, "", "pw"); err != nil {
-		t.Fatal(err)
+	a, b := filepath.Join(dir, ".bitseal-a.tmp"), filepath.Join(dir, ".bitseal-b.tmp")
+	writeFile(t, a, []byte("x"))
+	writeFile(t, b, []byte("x"))
+	trackTemp(a)
+	trackTemp(b)
+	untrackTemp(b)
+
+	removeTrackedTemps()
+
+	if _, err := os.Stat(a); err == nil {
+		t.Fatal("tracked temp file was not removed")
 	}
-	os.Remove(in)
-	if err := m.DecryptFile(in+".enc", "", "pw"); err != nil {
-		t.Fatal(err)
-	}
-	if string(readFile(t, in)) != "hi" {
-		t.Fatal("mismatch")
+	if _, err := os.Stat(b); err != nil {
+		t.Fatal("untracked file must not be removed")
 	}
 }
