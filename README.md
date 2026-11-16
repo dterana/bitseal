@@ -29,6 +29,7 @@ Versioned formats, so files you encrypt today still open after the algorithms ch
 
 - [Quick start](#quick-start)
 - [Why Bitseal](#why-bitseal)
+- [Alternatives](#alternatives)
 - [Compatibility](#compatibility)
 - [Installation](#installation)
 - [Usage](#usage)
@@ -64,6 +65,19 @@ Bitseal is a lightweight command-line utility for encrypting and decrypting file
 | 🔁 **Upgradable** | `rekey` moves old files to the current format, or changes the password or key file, atomically |
 | 🚀 **Extensible** | Interface-based design makes adding new cipher versions trivial |
 | 📦 **Minimal** | Go standard library plus `golang.org/x/crypto` and `golang.org/x/term` |
+
+## Alternatives
+
+Bitseal covers a narrow job: encrypt a file with a password, optionally combined with a key file, from one static binary. Other tools cover the same ground, and some are the better choice:
+
+| Tool | Choose it when |
+|---|---|
+| [`age`](https://age-encryption.org) | You want the most widely reviewed small tool for file encryption, or public-key recipients. `age -p` is the closest equivalent to Bitseal |
+| [`sops`](https://github.com/getsops/sops) | You keep secrets inside a repository and want per-value encryption, diffs and KMS integration |
+| `gpg` | You already have a GPG key infrastructure |
+| Bitseal | You want AES-256-GCM with Argon2id, a password plus a key file as a combined factor, and an on-disk format that stays decryptable across versions |
+
+Bitseal has its own file format ([docs/format.md](docs/format.md)) and has not had an independent security audit. For data where that matters, prefer an audited tool.
 
 ## Compatibility
 
