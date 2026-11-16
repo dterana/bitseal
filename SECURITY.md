@@ -1,21 +1,21 @@
 # Security policy
 
-Bitseal encrypts files, so security reports matter. Thank you for reporting
+Casemate encrypts files, so security reports matter. Thank you for reporting
 problems responsibly.
 
 ## Supported versions
 
 Only the latest release receives security fixes. Older releases are not
-patched; upgrade and run `bitseal rekey` on files written by older formats.
+patched; upgrade and run `casemate rekey` on files written by older formats.
 
 ## Reporting a vulnerability
 
 Please **do not open a public issue** for a vulnerability.
 
 Report it privately through GitHub:
-<https://github.com/dterana/bitseal/security/advisories/new>
+<https://github.com/dterana/casemate/security/advisories/new>
 
-Useful details: the Bitseal version (`bitseal version`), what you did, what you
+Useful details: the Casemate version (`casemate version`), what you did, what you
 expected, what happened, and, if possible, a minimal encrypted file that
 triggers it. Never send real passwords, key files or data.
 
@@ -41,7 +41,7 @@ Out of scope:
 - Vulnerabilities in the Go toolchain or in dependencies that are already fixed
   upstream (Dependabot and `govulncheck` track these)
 - The legacy V1 format's known limits (static salt, single block); use
-  `bitseal rekey` to leave it
+  `casemate rekey` to leave it
 
 ## How the format is protected
 

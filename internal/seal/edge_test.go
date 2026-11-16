@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dterana/bitseal/internal/testvectors"
+	"github.com/dterana/casemate/internal/testvectors"
 )
 
 func TestNewCipherUnknownVersion(t *testing.T) {
