@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dterana/bitseal/internal/seal"
+	"github.com/dterana/casemate/internal/seal"
 )
 
 func TestReadPasswordLine(t *testing.T) {
@@ -250,17 +250,17 @@ func TestReadPasswordFilePermissionWarning(t *testing.T) {
 }
 
 func TestReadPasswordEnv(t *testing.T) {
-	t.Setenv("BITSEAL_TEST_PW", "from env\n")
-	got, err := readPasswordEnv("BITSEAL_TEST_PW")
+	t.Setenv("CASEMATE_TEST_PW", "from env\n")
+	got, err := readPasswordEnv("CASEMATE_TEST_PW")
 	if err != nil || string(got) != "from env" {
 		t.Fatalf("got %q, %v", got, err)
 	}
 
-	t.Setenv("BITSEAL_TEST_EMPTY", "")
-	if _, err := readPasswordEnv("BITSEAL_TEST_EMPTY"); err == nil {
+	t.Setenv("CASEMATE_TEST_EMPTY", "")
+	if _, err := readPasswordEnv("CASEMATE_TEST_EMPTY"); err == nil {
 		t.Fatal("empty variable must be rejected")
 	}
-	if _, err := readPasswordEnv("BITSEAL_TEST_DEFINITELY_UNSET"); err == nil || !strings.Contains(err.Error(), "BITSEAL_TEST_DEFINITELY_UNSET") {
+	if _, err := readPasswordEnv("CASEMATE_TEST_DEFINITELY_UNSET"); err == nil || !strings.Contains(err.Error(), "CASEMATE_TEST_DEFINITELY_UNSET") {
 		t.Fatalf("unset variable must be rejected by name: %v", err)
 	}
 }

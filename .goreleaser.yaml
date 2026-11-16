@@ -1,10 +1,10 @@
 version: 2
 
-project_name: bitseal
+project_name: casemate
 
 builds:
-  - main: ./cmd/bitseal
-    binary: bitseal
+  - main: ./cmd/casemate
+    binary: casemate
     env:
       - CGO_ENABLED=0
     # Windows is not built for now: the test suite does not run there.

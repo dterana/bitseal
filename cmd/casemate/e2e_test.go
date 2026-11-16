@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dterana/bitseal/internal/testvectors"
+	"github.com/dterana/casemate/internal/testvectors"
 )
 
 // End-to-end tests run the compiled binary with the real Argon2 parameters,
@@ -20,11 +20,11 @@ import (
 var binPath string
 
 func TestMain(m *testing.M) {
-	dir, err := os.MkdirTemp("", "bitseal-e2e")
+	dir, err := os.MkdirTemp("", "casemate-e2e")
 	if err != nil {
 		panic(err)
 	}
-	name := "bitseal"
+	name := "casemate"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
@@ -75,7 +75,7 @@ func mustBin(t *testing.T, stdin string, env []string, args ...string) binResult
 func TestE2EVersion(t *testing.T) {
 	for _, flag := range []string{"version", "-version", "--version"} {
 		r := runBin(t, "", nil, flag)
-		if r.code != 0 || !strings.Contains(r.stdout, "Bitseal v"+Version) {
+		if r.code != 0 || !strings.Contains(r.stdout, "Casemate v"+Version) {
 			t.Fatalf("%s: %+v", flag, r)
 		}
 	}
@@ -183,11 +183,11 @@ func TestE2EPasswordFileAndEnv(t *testing.T) {
 
 	mustBin(t, "", nil, "encrypt", "-password-file", pf, in)
 	// the same passphrase through the environment opens it
-	r := mustBin(t, "", []string{"BITSEAL_E2E_PW=correct horse battery staple"}, "decrypt", "-password-env", "BITSEAL_E2E_PW", "-out", "-", in+".enc")
+	r := mustBin(t, "", []string{"CASEMATE_E2E_PW=correct horse battery staple"}, "decrypt", "-password-env", "CASEMATE_E2E_PW", "-out", "-", in+".enc")
 	if r.stdout != "payload" {
 		t.Fatalf("stdout = %q", r.stdout)
 	}
-	if r := runBin(t, "", nil, "decrypt", "-password-env", "BITSEAL_E2E_NOT_SET", in+".enc"); r.code != 1 {
+	if r := runBin(t, "", nil, "decrypt", "-password-env", "CASEMATE_E2E_NOT_SET", in+".enc"); r.code != 1 {
 		t.Fatalf("%+v", r)
 	}
 }
@@ -231,7 +231,7 @@ func TestE2ELegacyFileUpgradeWorkflow(t *testing.T) {
 	writeFile(t, f, mustHex(t, testvectors.V1Hex))
 
 	r := mustBin(t, "", nil, "info", f)
-	if !strings.Contains(r.stdout, "Version:   1") || !strings.Contains(r.stdout, "bitseal rekey") {
+	if !strings.Contains(r.stdout, "Version:   1") || !strings.Contains(r.stdout, "casemate rekey") {
 		t.Fatalf("%s", r.stdout)
 	}
 

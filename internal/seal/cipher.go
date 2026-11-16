@@ -1,4 +1,4 @@
-// Package seal implements Bitseal's versioned file encryption: the cipher
+// Package seal implements Casemate's versioned file encryption: the cipher
 // versions, their registry, and the file operations built on them.
 //
 // Every encrypted file starts with a version byte that selects the cipher

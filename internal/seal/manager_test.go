@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dterana/bitseal/internal/testvectors"
+	"github.com/dterana/casemate/internal/testvectors"
 )
 
 func TestManagerRegistersAllVersions(t *testing.T) {
@@ -933,7 +933,7 @@ func TestTempFilesAreTrackedWhileWriting(t *testing.T) {
 
 func TestRemoveTrackedTemps(t *testing.T) {
 	dir := t.TempDir()
-	a, b := filepath.Join(dir, ".bitseal-a.tmp"), filepath.Join(dir, ".bitseal-b.tmp")
+	a, b := filepath.Join(dir, ".casemate-a.tmp"), filepath.Join(dir, ".casemate-b.tmp")
 	writeFile(t, a, []byte("x"))
 	writeFile(t, b, []byte("x"))
 	trackTemp(a)

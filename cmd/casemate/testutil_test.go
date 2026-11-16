@@ -1,6 +1,6 @@
 package main
 
-import "github.com/dterana/bitseal/internal/testutil"
+import "github.com/dterana/casemate/internal/testutil"
 
 var (
 	pattern         = testutil.Pattern
