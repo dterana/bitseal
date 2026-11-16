@@ -1,4 +1,4 @@
-module github.com/dterana/bitseal
+module github.com/dterana/casemate
 
 go 1.26.0
 

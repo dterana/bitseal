@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dterana/bitseal/internal/seal"
+	"github.com/dterana/casemate/internal/seal"
 )
 
 type stringList []string

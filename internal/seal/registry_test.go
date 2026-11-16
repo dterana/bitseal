@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dterana/bitseal/internal/testvectors"
+	"github.com/dterana/casemate/internal/testvectors"
 )
 
 // These tests are the guard rails for adding a cipher version: they fail if
