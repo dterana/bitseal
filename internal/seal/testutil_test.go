@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/dterana/bitseal/internal/testutil"
+	"github.com/dterana/casemate/internal/testutil"
 )
 
 var (

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dterana/bitseal/internal/seal"
+	"github.com/dterana/casemate/internal/seal"
 )
 
 func (a *App) cmdEncrypt(args []string) error {
@@ -173,7 +173,7 @@ func formatInfo(name string, info seal.FileInfo) string {
 	switch {
 	case info.Legacy:
 		fmt.Fprintf(&b, "Key file:  not supported\n")
-		fmt.Fprintf(&b, "Status:    legacy format, upgrade with: bitseal rekey %s\n", inLabel(name))
+		fmt.Fprintf(&b, "Status:    legacy format, upgrade with: casemate rekey %s\n", inLabel(name))
 	case info.KeyFile:
 		fmt.Fprintf(&b, "Key file:  required\n")
 	default:

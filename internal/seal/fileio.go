@@ -64,7 +64,7 @@ func InstallSignalCleanup() {
 // directory and renames it into place, so a failed run never truncates or
 // half-writes an existing file. Errors from fn are returned unchanged.
 func writeAtomicWith(path string, perm os.FileMode, fn func(io.Writer) error) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".bitseal-*.tmp")
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".casemate-*.tmp")
 	if err != nil {
 		return fmt.Errorf("failed to write output file: %w", err)
 	}

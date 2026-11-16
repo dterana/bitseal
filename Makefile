@@ -3,10 +3,10 @@
 LDFLAGS := -X main.Build=$(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 
 help:
-	@echo "Bitseal - File Encryption CLI Tool"
+	@echo "Casemate - File Encryption CLI Tool"
 	@echo ""
 	@echo "Available targets:"
-	@echo "  build         - Build the bitseal binary (embeds the git revision)"
+	@echo "  build         - Build the casemate binary (embeds the git revision)"
 	@echo "  test          - Run all tests"
 	@echo "  test-short    - Run tests, skipping large-file cases"
 	@echo "  test-race     - Run all tests with the race detector"
@@ -20,7 +20,7 @@ help:
 	@echo "  golangci      - Run golangci-lint (must be installed)"
 
 build:
-	go build -ldflags "$(LDFLAGS)" -o bitseal ./cmd/bitseal
+	go build -ldflags "$(LDFLAGS)" -o casemate ./cmd/casemate
 
 test:
 	go test -v ./...
@@ -52,14 +52,14 @@ fuzz:
 
 clean:
 	go clean
-	rm -f bitseal bitseal.exe cover.out
+	rm -f casemate casemate.exe cover.out
 	rm -rf dist
 
 run-encrypt: build
-	./bitseal encrypt -file README.md
+	./casemate encrypt -file README.md
 
 run-decrypt: build
-	./bitseal decrypt -file README.md.enc
+	./casemate decrypt -file README.md.enc
 
 fmt:
 	go fmt ./...

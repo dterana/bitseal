@@ -42,17 +42,17 @@ func ReadFile(t *testing.T, path string) []byte {
 	return b
 }
 
-// TempLeftovers lists Bitseal temp files in dir.
+// TempLeftovers lists Casemate temp files in dir.
 func TempLeftovers(t *testing.T, dir string) []string {
 	t.Helper()
-	matches, err := filepath.Glob(filepath.Join(dir, ".bitseal-*.tmp"))
+	matches, err := filepath.Glob(filepath.Join(dir, ".casemate-*.tmp"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return matches
 }
 
-// NoTempLeftovers fails the test if Bitseal temp files remain in dir.
+// NoTempLeftovers fails the test if Casemate temp files remain in dir.
 func NoTempLeftovers(t *testing.T, dir string) {
 	t.Helper()
 	if l := TempLeftovers(t, dir); len(l) != 0 {

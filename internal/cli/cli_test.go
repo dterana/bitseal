@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dterana/bitseal/internal/seal"
-	"github.com/dterana/bitseal/internal/testvectors"
+	"github.com/dterana/casemate/internal/seal"
+	"github.com/dterana/casemate/internal/testvectors"
 )
 
 // These tests drive run() in-process with a cheap KDF (see captureStdio).
@@ -91,7 +91,7 @@ func TestCLIHelp(t *testing.T) {
 func TestCLIVersion(t *testing.T) {
 	for _, a := range []string{"version", "-version", "--version"} {
 		r := cli(t, "", a)
-		if r.code != 0 || r.out != "Bitseal v9.9.9-test (build: testbuild)\n" {
+		if r.code != 0 || r.out != "Casemate v9.9.9-test (build: testbuild)\n" {
 			t.Fatalf("%s: %+v", a, r)
 		}
 	}
@@ -278,17 +278,17 @@ func TestCLIWrongPassword(t *testing.T) {
 func TestCLIPasswordEnv(t *testing.T) {
 	dir := t.TempDir()
 	in := plainFile(t, dir, "a.txt", "payload")
-	t.Setenv("BITSEAL_CLI_PW", "from the environment")
+	t.Setenv("CASEMATE_CLI_PW", "from the environment")
 
-	mustCLI(t, "", "encrypt", "-password-env", "BITSEAL_CLI_PW", in)
+	mustCLI(t, "", "encrypt", "-password-env", "CASEMATE_CLI_PW", in)
 	os.Remove(in)
-	mustCLI(t, "", "decrypt", "-password-env", "BITSEAL_CLI_PW", in+".enc")
+	mustCLI(t, "", "decrypt", "-password-env", "CASEMATE_CLI_PW", in+".enc")
 	if string(readFile(t, in)) != "payload" {
 		t.Fatal("mismatch")
 	}
 
-	r := cli(t, "", "encrypt", "-password-env", "BITSEAL_CLI_NOT_SET", in)
-	if r.code != 1 || !strings.Contains(r.err, "BITSEAL_CLI_NOT_SET") {
+	r := cli(t, "", "encrypt", "-password-env", "CASEMATE_CLI_NOT_SET", in)
+	if r.code != 1 || !strings.Contains(r.err, "CASEMATE_CLI_NOT_SET") {
 		t.Fatalf("%+v", r)
 	}
 }
@@ -498,7 +498,7 @@ func TestCLIRekeyChangePasswordVariants(t *testing.T) {
 	dir := t.TempDir()
 	old := pwFile(t, dir, "old")
 	next := pwFile(t, dir, "next")
-	t.Setenv("BITSEAL_NEW_PW", "from env")
+	t.Setenv("CASEMATE_NEW_PW", "from env")
 
 	f := filepath.Join(dir, "a.enc")
 	writeV1File(t, f, "data", "old")
@@ -511,7 +511,7 @@ func TestCLIRekeyChangePasswordVariants(t *testing.T) {
 		t.Fatal("old password must stop working")
 	}
 
-	mustCLI(t, "", "rekey", "-password-file", next, "-new-password-env", "BITSEAL_NEW_PW", f)
+	mustCLI(t, "", "rekey", "-password-file", next, "-new-password-env", "CASEMATE_NEW_PW", f)
 	if decryptsTo(t, f, sec("from env")) != "data" {
 		t.Fatal("new-password-env")
 	}
@@ -591,7 +591,7 @@ func TestCLIRekeyErrors(t *testing.T) {
 	f := filepath.Join(dir, "a.enc")
 	writeV1File(t, f, "data", "pw")
 	orig := readFile(t, f)
-	t.Setenv("BITSEAL_X", "x")
+	t.Setenv("CASEMATE_X", "x")
 
 	cases := map[string]struct {
 		args []string
@@ -600,7 +600,7 @@ func TestCLIRekeyErrors(t *testing.T) {
 		"wrong password":      {[]string{"rekey", "-password-file", other, f}, "decryption failed"},
 		"stdin":               {[]string{"rekey", "-password-file", pf, "-"}, "files only"},
 		"no file":             {[]string{"rekey", "-password-file", pf}, "no input file given"},
-		"both new passwords":  {[]string{"rekey", "-password-file", pf, "-new-password-file", other, "-new-password-env", "BITSEAL_X", f}, "only one of -new-password-file"},
+		"both new passwords":  {[]string{"rekey", "-password-file", pf, "-new-password-file", other, "-new-password-env", "CASEMATE_X", f}, "only one of -new-password-file"},
 		"keyfile conflict":    {[]string{"rekey", "-password-file", pf, "-no-keyfile", "-new-keyfile", kf, f}, "cannot be combined"},
 		"missing new keyfile": {[]string{"rekey", "-password-file", pf, "-new-keyfile", filepath.Join(dir, "nope"), f}, "key file"},
 		"missing file":        {[]string{"rekey", "-password-file", pf, filepath.Join(dir, "nope.enc")}, "failed to read file"},
@@ -646,7 +646,7 @@ func TestCLIInfoLegacyFile(t *testing.T) {
 	writeFile(t, f, mustHex(t, testvectors.V1Hex))
 
 	r := mustCLI(t, "", "info", f)
-	for _, want := range []string{"Version:   1", "PBKDF2", "static salt", "legacy", "bitseal rekey", "File:      " + f} {
+	for _, want := range []string{"Version:   1", "PBKDF2", "static salt", "legacy", "casemate rekey", "File:      " + f} {
 		if !strings.Contains(r.out, want) {
 			t.Fatalf("info lacks %q:\n%s", want, r.out)
 		}

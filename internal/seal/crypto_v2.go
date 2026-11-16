@@ -125,7 +125,7 @@ func parseHeaderV2(b []byte) (headerV2, error) {
 	}
 	h.flags = b[1]
 	if h.flags&^knownFlagsV2 != 0 {
-		return h, fmt.Errorf("unsupported file flags: 0x%02x (file made by a newer Bitseal?)", h.flags)
+		return h, fmt.Errorf("unsupported file flags: 0x%02x (file made by a newer Casemate?)", h.flags)
 	}
 	h.chunkLog2 = b[2]
 	if h.chunkLog2 < minChunkLog2 || h.chunkLog2 > maxChunkLog2 {
