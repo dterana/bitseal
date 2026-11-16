@@ -1,6 +1,6 @@
-# Bitseal file format
+# Casemate file format
 
-This document specifies the on-disk formats Bitseal reads and writes, and the
+This document specifies the on-disk formats Casemate reads and writes, and the
 rules for changing them. It is written so that someone can implement a
 compatible reader without reading the Go code.
 
@@ -30,7 +30,7 @@ offset  size  field
 - No additional authenticated data. The version byte is therefore not
   authenticated; it is only used for routing.
 - The whole file is one GCM message, so it must be read into memory.
-- No key file support. The static salt is a known weakness; use `bitseal rekey`
+- No key file support. The static salt is a known weakness; use `casemate rekey`
   to upgrade V1 files.
 
 ## Version 2 (current)
@@ -105,14 +105,14 @@ The body is a sequence of one or more chunks. Each chunk is
 - The header is authenticated by every chunk, so changing the KDF parameters,
   flags, chunk size or salt fails authentication.
 - A reader MUST NOT release plaintext of a chunk before that chunk has
-  authenticated. Bitseal additionally holds all output back when writing to
+  authenticated. Casemate additionally holds all output back when writing to
   stdout, and writes files through a temporary file that is only renamed into
   place after the last chunk authenticated.
 - `counter` is a 32 bit value; a file cannot have more than 2^32 chunks.
 
 ## Rules for evolving the format
 
-These rules are what "future proof" means for Bitseal.
+These rules are what "future proof" means for Casemate.
 
 1. **A released version is never removed or reinterpreted.** Every released
    version stays readable. New builds may stop *writing* an old version, never
@@ -122,7 +122,7 @@ These rules are what "future proof" means for Bitseal.
    the nonce construction and the meaning of existing fields.
 3. **Raising the cost needs no new version.** Argon2id parameters and the chunk
    size are stored in each file. Changing the defaults only affects new files,
-   and `bitseal rekey` upgrades old ones.
+   and `casemate rekey` upgrades old ones.
 4. **Optional features use flag bits.** A flag that changes how a file must be
    decrypted is safe to add without a new version, because readers refuse
    unknown flags instead of misreading the file. Reserve a flag only when old

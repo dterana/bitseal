@@ -1,14 +1,14 @@
 <div align="center">
 
-# 🔐 Bitseal
+# 🔐 Casemate
 
 **Future-proof file encryption for the command line.**
 Versioned formats, so files you encrypt today still open after the algorithms change.
 
-[![CI](https://github.com/dterana/bitseal/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/dterana/bitseal/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/dterana/bitseal?include_prereleases&sort=semver)](https://github.com/dterana/bitseal/releases)
-[![Go](https://img.shields.io/github/go-mod/go-version/dterana/bitseal?logo=go&logoColor=white)](go.mod)
-[![License: MIT](https://img.shields.io/github/license/dterana/bitseal)](LICENSE)
+[![CI](https://github.com/dterana/casemate/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/dterana/casemate/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/dterana/casemate?include_prereleases&sort=semver)](https://github.com/dterana/casemate/releases)
+[![Go](https://img.shields.io/github/go-mod/go-version/dterana/casemate?logo=go&logoColor=white)](go.mod)
+[![License: MIT](https://img.shields.io/github/license/dterana/casemate)](LICENSE)
 [![Status](https://img.shields.io/badge/status-pre--1.0-orange)](#limitations)
 [![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey)](#compatibility)
 [![Arch](https://img.shields.io/badge/arch-amd64%20%7C%20arm64-lightgrey)](#compatibility)
@@ -25,10 +25,12 @@ Versioned formats, so files you encrypt today still open after the algorithms ch
 
 ---
 
+> **Formerly Bitseal.** The project was renamed to Casemate in v0.4.0 to avoid confusion with an unrelated product called BitSeal. The file format is unchanged: files encrypted with Bitseal v0.1.0 to v0.3.1 decrypt with Casemate.
+
 ## Table of contents
 
 - [Quick start](#quick-start)
-- [Why Bitseal](#why-bitseal)
+- [Why Casemate](#why-casemate)
 - [Alternatives](#alternatives)
 - [Compatibility](#compatibility)
 - [Installation](#installation)
@@ -45,16 +47,16 @@ Versioned formats, so files you encrypt today still open after the algorithms ch
 ## Quick start
 
 ```bash
-go install github.com/dterana/bitseal/cmd/bitseal@latest
+go install github.com/dterana/casemate/cmd/casemate@latest
 
-bitseal encrypt notes.txt            # asks for a password twice, writes notes.txt.enc
-bitseal decrypt notes.txt.enc        # restores notes.txt
-bitseal info notes.txt.enc           # shows the format, no password needed
+casemate encrypt notes.txt            # asks for a password twice, writes notes.txt.enc
+casemate decrypt notes.txt.enc        # restores notes.txt
+casemate info notes.txt.enc           # shows the format, no password needed
 ```
 
-## Why Bitseal
+## Why Casemate
 
-Bitseal is a lightweight command-line utility for encrypting and decrypting files with automatic version management. Unlike tools like OpenSSL that change their defaults and break backward compatibility, Bitseal embeds version information in every encrypted file, allowing it to decrypt old files even after algorithm changes.
+Casemate is a lightweight command-line utility for encrypting and decrypting files with automatic version management. Unlike tools like OpenSSL that change their defaults and break backward compatibility, Casemate embeds version information in every encrypted file, allowing it to decrypt old files even after algorithm changes.
 
 | | |
 |---|---|
@@ -68,16 +70,16 @@ Bitseal is a lightweight command-line utility for encrypting and decrypting file
 
 ## Alternatives
 
-Bitseal covers a narrow job: encrypt a file with a password, optionally combined with a key file, from one static binary. Other tools cover the same ground, and some are the better choice:
+Casemate covers a narrow job: encrypt a file with a password, optionally combined with a key file, from one static binary. Other tools cover the same ground, and some are the better choice:
 
 | Tool | Choose it when |
 |---|---|
-| [`age`](https://age-encryption.org) | You want the most widely reviewed small tool for file encryption, or public-key recipients. `age -p` is the closest equivalent to Bitseal |
+| [`age`](https://age-encryption.org) | You want the most widely reviewed small tool for file encryption, or public-key recipients. `age -p` is the closest equivalent to Casemate |
 | [`sops`](https://github.com/getsops/sops) | You keep secrets inside a repository and want per-value encryption, diffs and KMS integration |
 | `gpg` | You already have a GPG key infrastructure |
-| Bitseal | You want AES-256-GCM with Argon2id, a password plus a key file as a combined factor, and an on-disk format that stays decryptable across versions |
+| Casemate | You want AES-256-GCM with Argon2id, a password plus a key file as a combined factor, and an on-disk format that stays decryptable across versions |
 
-Bitseal has its own file format ([docs/format.md](docs/format.md)) and has not had an independent security audit. For data where that matters, prefer an audited tool.
+Casemate has its own file format ([docs/format.md](docs/format.md)) and has not had an independent security audit. For data where that matters, prefer an audited tool.
 
 ## Compatibility
 
@@ -117,12 +119,12 @@ flowchart LR
 ```bash
 brew tap dterana/tap
 brew trust --tap dterana/tap   # Homebrew 7 only loads third-party taps you have trusted
-brew install bitseal
+brew install casemate
 ```
 The formula lives in [dterana/homebrew-tap](https://github.com/dterana/homebrew-tap) and follows the latest release automatically.
 
 ### From a release
-Download the archive for your platform from the [releases page](https://github.com/dterana/bitseal/releases), check it against `checksums.txt`, and put `bitseal` on your `PATH`. Releases are marked as pre-releases until 1.0.
+Download the archive for your platform from the [releases page](https://github.com/dterana/casemate/releases), check it against `checksums.txt`, and put `casemate` on your `PATH`. Releases are marked as pre-releases until 1.0.
 
 ```bash
 shasum -a 256 -c checksums.txt --ignore-missing
@@ -131,32 +133,32 @@ shasum -a 256 -c checksums.txt --ignore-missing
 Releases published after v0.3.0 also carry signed build provenance and one SBOM (`*.sbom.json`) per archive. Verify an archive was built by this repository's release workflow:
 
 ```bash
-gh attestation verify bitseal_<version>_<os>_<arch>.tar.gz --repo dterana/bitseal
+gh attestation verify casemate_<version>_<os>_<arch>.tar.gz --repo dterana/casemate
 ```
 
 ### From source
 Building requires Go 1.26 or newer (set by the `golang.org/x/crypto` dependency).
 ```bash
-git clone https://github.com/dterana/bitseal.git
-cd bitseal
-make build        # embeds the git revision in `bitseal version`
+git clone https://github.com/dterana/casemate.git
+cd casemate
+make build        # embeds the git revision in `casemate version`
 ```
 
 ### Using go install
 ```bash
-go install github.com/dterana/bitseal/cmd/bitseal@latest
+go install github.com/dterana/casemate/cmd/casemate@latest
 ```
-The command lives in `cmd/bitseal` since v0.3.0. The older v0.1.0 release installs from the repository root (`go install github.com/dterana/bitseal@v0.1.0`).
+The command lives in `cmd/casemate` since v0.4.0. Releases up to v0.3.1 were published under the previous name, Bitseal, and install from `github.com/dterana/bitseal/cmd/bitseal@v0.3.1` (v0.1.0 from the repository root, `github.com/dterana/bitseal@v0.1.0`).
 
 ## Usage
 
 | Command | What it does |
 |---|---|
-| `bitseal encrypt [flags] [file...]` | Encrypt files (writes `<file>.enc`) |
-| `bitseal decrypt [flags] [file...]` | Decrypt files (strips `.enc`) |
-| `bitseal rekey [flags] [file...]` | Re-encrypt in place with the current format, optionally with a new password or key file |
-| `bitseal info [file...]` | Show a file's format without decrypting it |
-| `bitseal version` | Show version information |
+| `casemate encrypt [flags] [file...]` | Encrypt files (writes `<file>.enc`) |
+| `casemate decrypt [flags] [file...]` | Decrypt files (strips `.enc`) |
+| `casemate rekey [flags] [file...]` | Re-encrypt in place with the current format, optionally with a new password or key file |
+| `casemate info [file...]` | Show a file's format without decrypting it |
+| `casemate version` | Show version information |
 
 Put flags before the file names. Exit codes: `0` success, `1` an operation failed, `2` invalid flags.
 
@@ -177,16 +179,16 @@ Put flags before the file names. Exit codes: `0` success, `1` an operation faile
 
 ### Encrypt and decrypt
 ```bash
-./bitseal encrypt myfile.txt              # creates myfile.txt.enc
-./bitseal decrypt myfile.txt.enc          # restores myfile.txt
-./bitseal encrypt -file a.txt -file b.txt # several files, one password prompt
-./bitseal encrypt -file myfile.txt -out secure.bin
-./bitseal decrypt -file secure.bin -out recovered.txt
+./casemate encrypt myfile.txt              # creates myfile.txt.enc
+./casemate decrypt myfile.txt.enc          # restores myfile.txt
+./casemate encrypt -file a.txt -file b.txt # several files, one password prompt
+./casemate encrypt -file myfile.txt -out secure.bin
+./casemate decrypt -file secure.bin -out recovered.txt
 ```
 
 On a terminal, `encrypt` asks for the password twice so a typo cannot lock you out of your own file.
 
-Decrypting a file that does not end in `.enc` requires `-out`, and the output path must differ from the input path. Bitseal refuses both cases instead of overwriting your encrypted file. Directories are not supported; archive them first (for example with `tar`).
+Decrypting a file that does not end in `.enc` requires `-out`, and the output path must differ from the input path. Casemate refuses both cases instead of overwriting your encrypted file. Directories are not supported; archive them first (for example with `tar`).
 
 ### Where the password comes from
 
@@ -198,17 +200,17 @@ Decrypting a file that does not end in `.enc` requires `-out`, and the output pa
 | Environment | `-password-env <NAME>` |
 
 ```bash
-echo "mypassword" | ./bitseal encrypt secret.txt          # piped (visible in shell history)
-./bitseal decrypt -password-file ~/.secrets/pw  -out - config.yml.enc
-BITSEAL_PASSWORD=... ./bitseal decrypt -password-env BITSEAL_PASSWORD config.yml.enc
+echo "mypassword" | ./casemate encrypt secret.txt          # piped (visible in shell history)
+./casemate decrypt -password-file ~/.secrets/pw  -out - config.yml.enc
+CASEMATE_PASSWORD=... ./casemate decrypt -password-env CASEMATE_PASSWORD config.yml.enc
 ```
 
 Spaces inside a password are kept (`correct horse battery staple` works); surrounding whitespace and the line ending are trimmed. A password file that other users can read produces a warning. Prefer `-password-file` or `-password-env` over `echo`, which exposes the password in shell history and process listings.
 
 ### Key file (second factor)
 ```bash
-./bitseal encrypt -keyfile ~/.keys/seal.key notes.txt
-./bitseal decrypt -keyfile ~/.keys/seal.key notes.txt.enc
+./casemate encrypt -keyfile ~/.keys/seal.key notes.txt
+./casemate decrypt -keyfile ~/.keys/seal.key notes.txt.enc
 ```
 The key file is hashed and mixed into the key together with the password, so an attacker needs both. The file records that a key file is required, so decrypting without one gives a clear error. Key files need format V2.
 
@@ -216,8 +218,8 @@ The key file is hashed and mixed into the key together with the password, so an 
 Use `-` for stdin (`-file -`) or stdout (`-out -`). Data goes to stdout; prompts, progress and errors go to stderr, so pipelines stay clean.
 
 ```bash
-tar czf - ./project | ./bitseal encrypt -password-file pw -file - -out project.tar.gz.enc
-./bitseal decrypt -password-file pw -file project.tar.gz.enc -out - | tar xzf -
+tar czf - ./project | ./casemate encrypt -password-file pw -file - -out project.tar.gz.enc
+./casemate decrypt -password-file pw -file project.tar.gz.enc -out - | tar xzf -
 ```
 
 - With `-file -` the password cannot come from stdin; use `-password-file` or `-password-env`.
@@ -226,19 +228,19 @@ tar czf - ./project | ./bitseal encrypt -password-file pw -file - -out project.t
 
 ### Upgrade or change a file with `rekey`
 ```bash
-./bitseal info old.enc                       # shows "Version: 1 ... legacy"
-./bitseal rekey old.enc                      # same password, current format, atomic in place
-./bitseal rekey -change-password a.enc       # prompts for the current and the new password
-./bitseal rekey -new-password-file new.pw a.enc
-./bitseal rekey -new-keyfile seal.key a.enc  # add or replace the key file
-./bitseal rekey -no-keyfile a.enc            # remove the key file requirement
-./bitseal rekey -out b.enc a.enc             # write elsewhere, keep the original
+./casemate info old.enc                       # shows "Version: 1 ... legacy"
+./casemate rekey old.enc                      # same password, current format, atomic in place
+./casemate rekey -change-password a.enc       # prompts for the current and the new password
+./casemate rekey -new-password-file new.pw a.enc
+./casemate rekey -new-keyfile seal.key a.enc  # add or replace the key file
+./casemate rekey -no-keyfile a.enc            # remove the key file requirement
+./casemate rekey -out b.enc a.enc             # write elsewhere, keep the original
 ```
 The plaintext is piped between decrypting and re-encrypting and never touches the disk. A failure leaves the original file untouched. A key file given with `-keyfile` is the current one; use `-new-keyfile` to change it.
 
 ### Inspect a file
 ```
-$ ./bitseal info notes.txt.enc
+$ ./casemate info notes.txt.enc
 File:      notes.txt.enc
 Version:   2
 Cipher:    AES-256-GCM (chunked), 64 KiB chunks
@@ -256,7 +258,7 @@ Key file:  not required
 | **Authenticated encryption** | AES-256 in GCM mode protects against tampering and detects corrupted files |
 | **Key derivation** | V2 uses Argon2id (3 passes, 64 MiB, 4 threads) with a random 16-byte per-file salt |
 | **Parameters in the header** | The KDF cost is stored in each file, so defaults can be raised later without a new cipher version, and old files keep decrypting with the parameters they were written with |
-| **Bounded header values** | Parameters read from a file are capped (at most 1 GiB of memory), so a hostile file cannot make Bitseal exhaust memory |
+| **Bounded header values** | Parameters read from a file are capped (at most 1 GiB of memory), so a hostile file cannot make Casemate exhaust memory |
 | **Chunked authentication** | 64 KiB chunks whose nonces encode position and "last chunk", so reordering, duplicating, dropping or truncating chunks is detected, including truncation at a chunk boundary. The whole header is authenticated with every chunk |
 | **Atomic writes** | Output goes to a temporary file in the destination directory and is renamed into place, so a failed run never truncates or half-writes an existing file. Ctrl+C and SIGTERM remove the temporary file |
 | **Hidden input** | The password is read with terminal echo disabled |
@@ -276,18 +278,18 @@ V1 uses PBKDF2-SHA256 (100,000 iterations) with a static salt. It is still decry
 
 The complete specification, the limits applied to untrusted headers and the rules for evolving the format are in [docs/format.md](docs/format.md).
 
-The version byte allows Bitseal to automatically route decryption to the correct algorithm, even as new versions are added.
+The version byte allows Casemate to automatically route decryption to the correct algorithm, even as new versions are added.
 
 ### Why version your encryption?
 
 The OpenSSL problem: In 2023, OpenSSL changed its default digest from MD5 to SHA-256 for `enc` command. If you had encrypted files with the old version, you couldn't decrypt them anymore without specifying legacy parameters.
 
-Bitseal solves this by embedding the version number in every encrypted file. When you decrypt, it automatically detects which algorithm was used and applies it, no matter how many new versions have been released.
+Casemate solves this by embedding the version number in every encrypted file. When you decrypt, it automatically detects which algorithm was used and applies it, no matter how many new versions have been released.
 
 ## Architecture
 
 ```
-cmd/bitseal/          entry point (thin), version and build information, end-to-end tests
+cmd/casemate/          entry point (thin), version and build information, end-to-end tests
 internal/cli/         commands, flags and secret input; an injectable App, no global state
 internal/seal/        cipher versions, their registry, the manager and file I/O
 internal/testvectors/ golden encrypted files that lock the on-disk formats
@@ -328,18 +330,18 @@ The registry tests fail if a version is registered without a golden vector, if t
 ## Security considerations
 
 - **Password strength**: Use strong passwords (16+ characters, or a long passphrase). A weak password is the weakest link; Argon2id slows guessing but cannot save a guessable password. A key file adds a second factor.
-- **Salt**: V2 uses a random per-file salt stored in the header. V1 files use a static salt; upgrade them with `bitseal rekey`.
+- **Salt**: V2 uses a random per-file salt stored in the header. V1 files use a static salt; upgrade them with `casemate rekey`.
 - **File permissions**: Output files are created with 0600 permissions (read/write only by owner).
 - **Authentication scope**: The tool encrypts and authenticates files with the password, but a file cannot prove who wrote it. For that, use signatures alongside encrypted files.
 - **Reporting vulnerabilities**: see [SECURITY.md](SECURITY.md); use GitHub's private reporting, not a public issue.
-- **Password in memory**: Bitseal zeroes its own copies of the password and key file after use. This is best effort: Go and the terminal layer may keep other copies until the process exits.
+- **Password in memory**: Casemate zeroes its own copies of the password and key file after use. This is best effort: Go and the terminal layer may keep other copies until the process exits.
 
 ## Limitations
 
 - **Pre-1.0**: Command-line flags and file formats may still change before 1.0. Check the release notes when upgrading.
-- **Interrupted runs**: Output is written to a `.bitseal-*.tmp` file next to the destination and renamed on success. Ctrl+C and SIGTERM remove it, but if the process is killed with SIGKILL the temp file can remain and is safe to delete.
+- **Interrupted runs**: Output is written to a `.casemate-*.tmp` file next to the destination and renamed on success. Ctrl+C and SIGTERM remove it, but if the process is killed with SIGKILL the temp file can remain and is safe to delete.
 - **Buffered stdout decrypt**: `decrypt -out -` and V1 files are held in memory while decrypting (V2 to a file streams with bounded memory).
-- **No directories**: Bitseal encrypts single files or streams. Archive directories first.
+- **No directories**: Casemate encrypts single files or streams. Archive directories first.
 - **Windows**: not supported for now. No Windows binaries are built and the test suite does not run there.
 - **No Keychain integration**: Use `-password-file` or `-password-env` to feed a password from your secret store.
 
@@ -347,23 +349,23 @@ The registry tests fail if a version is registered without a golden vector, if t
 
 ### Encrypt sensitive notes
 ```bash
-./bitseal encrypt notes.txt
+./casemate encrypt notes.txt
 # Enter password when prompted (twice)
 ```
 
 ### Batch encryption
 ```bash
-./bitseal encrypt *.doc
+./casemate encrypt *.doc
 ```
 
 ### Backup and encrypt
 ```bash
-tar czf - /path/to/data | ./bitseal encrypt -password-file ~/.pw -file - -out backup.tar.gz.enc
+tar czf - /path/to/data | ./casemate encrypt -password-file ~/.pw -file - -out backup.tar.gz.enc
 ```
 
 ### Render a secret config at setup time
 ```bash
-./bitseal decrypt -password-env BITSEAL_PASSWORD -out ~/.config/ngrok/ngrok.yml secrets/ngrok.yml.enc
+./casemate decrypt -password-env CASEMATE_PASSWORD -out ~/.config/ngrok/ngrok.yml secrets/ngrok.yml.enc
 ```
 
 ## Troubleshooting
@@ -371,20 +373,20 @@ tar czf - /path/to/data | ./bitseal encrypt -password-file ~/.pw -file - -out ba
 | Message | What to do |
 |---|---|
 | `decryption failed (wrong password or corrupted file)` | Check the password (and key file, if one was used). Verify the file was not corrupted or tampered with |
-| `this file requires a key file (-keyfile)` / `this file was not encrypted with a key file` | Pass `-keyfile` exactly when the file was encrypted with one. `bitseal info` shows whether it is required |
+| `this file requires a key file (-keyfile)` / `this file was not encrypted with a key file` | Pass `-keyfile` exactly when the file was encrypted with one. `casemate info` shows whether it is required |
 | `cannot infer output path: input does not end in .enc, use -out` | Pass `-out <path>` to say where the decrypted file should go |
-| `output path must differ from input path` | Choose a different `-out`; Bitseal never writes over the file it is reading |
+| `output path must differ from input path` | Choose a different `-out`; Casemate never writes over the file it is reading |
 | `passwords do not match` | The two prompts on `encrypt` differed; run the command again |
 | `cannot read the password from stdin while the input is stdin` | With `-file -`, use `-password-file` or `-password-env` |
 | `refusing to write encrypted data to a terminal` | Use `-out <file>` or redirect stdout |
-| `unsupported encryption version` / `unsupported file flags` | The file uses a newer format than your Bitseal build; update Bitseal |
-| Password input not hidden | This can happen when input is redirected; Bitseal then reads the first line from stdin |
+| `unsupported encryption version` / `unsupported file flags` | The file uses a newer format than your Casemate build; update Casemate |
+| Password input not hidden | This can happen when input is redirected; Casemate then reads the first line from stdin |
 
 ## Development
 
 ### Running tests
 ```bash
-make test         # unit, CLI and end-to-end tests (cmd/bitseal builds the binary)
+make test         # unit, CLI and end-to-end tests (cmd/casemate builds the binary)
 make test-short   # skips the large-file cases
 make test-race    # with the race detector
 make cover        # per-function coverage
@@ -407,7 +409,7 @@ Pushing a tag like `v0.4.0` runs `.github/workflows/release.yml`, which tests, b
 
 ## Issues and pull requests
 
-Bitseal is maintained by a single person, and pull requests can only be opened by repository collaborators, so external contributions are not accepted. Bug reports are welcome as [GitHub issues](https://github.com/dterana/bitseal/issues); please do not include passwords, key files or other sensitive data in them. Security vulnerabilities must be reported privately, see [SECURITY.md](SECURITY.md). Reports are handled on a best-effort basis.
+Casemate is maintained by a single person, and pull requests can only be opened by repository collaborators, so external contributions are not accepted. Bug reports are welcome as [GitHub issues](https://github.com/dterana/casemate/issues); please do not include passwords, key files or other sensitive data in them. Security vulnerabilities must be reported privately, see [SECURITY.md](SECURITY.md). Reports are handled on a best-effort basis.
 
 ## License
 

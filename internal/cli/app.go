@@ -1,4 +1,4 @@
-// Package cli implements the bitseal command line: commands, flags and
+// Package cli implements the casemate command line: commands, flags and
 // secret input, on top of the seal package.
 //
 // Everything that touches the process (streams, terminal detection, the
@@ -16,13 +16,13 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/dterana/bitseal/internal/seal"
+	"github.com/dterana/casemate/internal/seal"
 )
 
 // App is one invocation environment of the CLI.
 type App struct {
 	// Data goes to Stdout; prompts, progress and errors go to Stderr so
-	// `bitseal decrypt -out - | ...` stays clean.
+	// `casemate decrypt -out - | ...` stays clean.
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
@@ -69,16 +69,16 @@ var (
 	errReported = errors.New("error already reported")
 )
 
-const usageText = `Bitseal - File Encryption CLI Tool
+const usageText = `Casemate - File Encryption CLI Tool
 Version: v%s
 
 Usage:
-  bitseal encrypt [flags] [file...]   Encrypt files (writes <file>.enc)
-  bitseal decrypt [flags] [file...]   Decrypt files (strips .enc)
-  bitseal rekey   [flags] [file...]   Re-encrypt files in place with the current
+  casemate encrypt [flags] [file...]   Encrypt files (writes <file>.enc)
+  casemate decrypt [flags] [file...]   Decrypt files (strips .enc)
+  casemate rekey   [flags] [file...]   Re-encrypt files in place with the current
                                       format, optionally with a new password or key file
-  bitseal info    [file...]           Show a file's format without decrypting it
-  bitseal version                     Show version information
+  casemate info    [file...]           Show a file's format without decrypting it
+  casemate version                     Show version information
 
 Common flags (put them before the file names):
   -file <path>            Input file, repeatable; - reads stdin
@@ -87,7 +87,7 @@ Common flags (put them before the file names):
   -password-env <name>    Read the password from an environment variable
   -keyfile <path>         Use a key file as a second factor
 
-Run 'bitseal <command> -h' to list all flags of a command.
+Run 'casemate <command> -h' to list all flags of a command.
 `
 
 // Run executes the CLI with the given arguments (without the program name)
@@ -110,11 +110,11 @@ func (a *App) Run(args []string) int {
 	case "info":
 		err = a.cmdInfo(args[1:])
 	case "version", "-version", "--version":
-		fmt.Fprintf(a.Stdout, "Bitseal v%s (build: %s)\n", a.Version, a.Build)
+		fmt.Fprintf(a.Stdout, "Casemate v%s (build: %s)\n", a.Version, a.Build)
 	case "help", "-h", "--help":
 		fmt.Fprintf(a.Stdout, usageText, a.Version)
 	default:
-		fmt.Fprintf(a.Stderr, "Unknown command: %s\nRun 'bitseal help' for usage.\n", args[0])
+		fmt.Fprintf(a.Stderr, "Unknown command: %s\nRun 'casemate help' for usage.\n", args[0])
 		return 1
 	}
 

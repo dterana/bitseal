@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dterana/bitseal/internal/testvectors"
+	"github.com/dterana/casemate/internal/testvectors"
 )
 
 func TestCipherVersionBytes(t *testing.T) {

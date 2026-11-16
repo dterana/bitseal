@@ -14,7 +14,7 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/dterana/bitseal/internal/seal"
+	"github.com/dterana/casemate/internal/seal"
 )
 
 func (a *App) stdinLines() *bufio.Reader {

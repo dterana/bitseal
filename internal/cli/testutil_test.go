@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dterana/bitseal/internal/seal"
-	"github.com/dterana/bitseal/internal/testutil"
+	"github.com/dterana/casemate/internal/seal"
+	"github.com/dterana/casemate/internal/testutil"
 )
 
 var (
@@ -17,7 +17,7 @@ var (
 	noTempLeftovers = testutil.NoTempLeftovers
 )
 
-// fastKDF keeps Argon2 cheap; the end-to-end tests in cmd/bitseal cover the
+// fastKDF keeps Argon2 cheap; the end-to-end tests in cmd/casemate cover the
 // real parameters.
 var fastKDF = seal.KDFParams{Time: 1, MemoryKiB: 64, Threads: 1}
 
