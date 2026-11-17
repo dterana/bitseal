@@ -333,6 +333,7 @@ The registry tests fail if a version is registered without a golden vector, if t
 - **Salt**: V2 uses a random per-file salt stored in the header. V1 files use a static salt; upgrade them with `casemate rekey`.
 - **File permissions**: Output files are created with 0600 permissions (read/write only by owner).
 - **Authentication scope**: The tool encrypts and authenticates files with the password, but a file cannot prove who wrote it. For that, use signatures alongside encrypted files.
+- **Threat model**: [docs/threat-model.md](docs/threat-model.md) states what is protected, against whom, and what is not.
 - **Reporting vulnerabilities**: see [SECURITY.md](SECURITY.md); use GitHub's private reporting, not a public issue.
 - **Password in memory**: Casemate zeroes its own copies of the password and key file after use. This is best effort: Go and the terminal layer may keep other copies until the process exits.
 
