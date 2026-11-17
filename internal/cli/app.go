@@ -73,11 +73,14 @@ const usageText = `Casemate - File Encryption CLI Tool
 Version: v%s
 
 Usage:
-  casemate encrypt [flags] [file...]   Encrypt files (writes <file>.enc)
-  casemate decrypt [flags] [file...]   Decrypt files (strips .enc)
+  casemate encrypt [flags] [path...]   Encrypt files (writes <file>.enc) or directories
+                                      (writes <dir>.tar.enc)
+  casemate decrypt [flags] [file...]   Decrypt files (strips .enc); with -extract, unpack
+                                      a directory archive into a new directory
   casemate rekey   [flags] [file...]   Re-encrypt files in place with the current
                                       format, optionally with a new password or key file
   casemate info    [file...]           Show a file's format without decrypting it
+  casemate keygen  -out <path>         Create a random key file (use it with -keyfile)
   casemate version                     Show version information
 
 Common flags (put them before the file names):
@@ -85,6 +88,7 @@ Common flags (put them before the file names):
   -out <path>             Output file (single input only); - writes stdout
   -password-file <path>   Read the password from the first line of a file
   -password-env <name>    Read the password from an environment variable
+  -password-fd <n>        Read the password from a file descriptor (3 or higher)
   -keyfile <path>         Use a key file as a second factor
 
 Run 'casemate <command> -h' to list all flags of a command.
@@ -109,6 +113,8 @@ func (a *App) Run(args []string) int {
 		err = a.cmdRekey(args[1:])
 	case "info":
 		err = a.cmdInfo(args[1:])
+	case "keygen":
+		err = a.cmdKeygen(args[1:])
 	case "version", "-version", "--version":
 		fmt.Fprintf(a.Stdout, "Casemate v%s (build: %s)\n", a.Version, a.Build)
 	case "help", "-h", "--help":

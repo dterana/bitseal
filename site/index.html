@@ -306,11 +306,12 @@ footer a{text-decoration:none}footer a:hover{color:var(--foam)}
   <div class="wrap">
     <div class="intro" style="margin-bottom:0">
       <h2>Made for scripts and pipes.</h2>
-      <p>Data goes to stdout. Prompts and errors go to stderr. Exit codes are real. Passwords can come from a prompt, a file, an environment variable or a pipe.</p>
+      <p>Data goes to stdout. Prompts and errors go to stderr. Exit codes are real. Passwords can come from a prompt, a file, an environment variable, a file descriptor or a pipe.</p>
     </div>
     <div class="term">
       <div class="tabs" role="tablist" id="tabs">
         <button role="tab" aria-selected="true" data-t="enc">encrypt</button>
+        <button role="tab" aria-selected="false" data-t="dir">directory</button>
         <button role="tab" aria-selected="false" data-t="pipe">pipe</button>
         <button role="tab" aria-selected="false" data-t="rekey">rekey</button>
         <button role="tab" aria-selected="false" data-t="key">key file</button>
@@ -328,12 +329,14 @@ footer a{text-decoration:none}footer a:hover{color:var(--foam)}
       <div class="fact"><dt>Key derivation</dt><dd>Argon2id with a per-file salt. Version 1 files use PBKDF2-SHA256.</dd></div>
       <div class="fact"><dt>Memory</dt><dd>Streaming format. Large files use bounded memory and flow through pipes.</dd></div>
       <div class="fact"><dt>Dependencies</dt><dd>Two direct dependencies, <code>x/crypto</code> and <code>x/term</code>, on top of the Go standard library.</dd></div>
+      <div class="fact"><dt>Directories</dt><dd>Encrypted as a tar stream and extracted only after the whole file authenticates. Links and paths that escape the target are refused.</dd></div>
+      <div class="fact"><dt>Install</dt><dd>Homebrew, <code>.deb</code> and <code>.rpm</code> packages, release archives with provenance, or <code>go install</code>.</dd></div>
       <div class="fact"><dt>Platforms</dt><dd>Linux and macOS on amd64 and arm64, tested in CI. Windows is not supported for now.</dd></div>
       <div class="fact"><dt>Tests</dt><dd>Unit, CLI, end to end and fuzz tests, plus golden vectors for every format.</dd></div>
     </dl>
     <div class="honest">
       <h3>Pre-1.0 and not independently audited.</h3>
-      <p>Casemate is young. The format is documented and tested, but it has not had a third-party security review. Read the <a href="https://github.com/dterana/casemate/blob/main/SECURITY.md">security policy</a> before you rely on it for anything critical.</p>
+      <p>Casemate is young. The format is documented and tested, but it has not had a third-party security review. Read the <a href="https://github.com/dterana/casemate/blob/main/docs/threat-model.md">threat model</a> and the <a href="https://github.com/dterana/casemate/blob/main/SECURITY.md">security policy</a> before you rely on it for anything critical.</p>
     </div>
   </div>
 </section>
@@ -447,9 +450,10 @@ make build</pre></div>
   /* terminal demo */
   var demos = {
     enc: [['$ casemate encrypt notes.txt','c'],['Enter password: ','d'],['Confirm password: ','d'],['✓ Encrypted notes.txt -> notes.txt.enc','o'],['','d'],['$ casemate info notes.txt.enc','c'],['File:      notes.txt.enc','o'],['Version:   2','o'],['Cipher:    AES-256-GCM (chunked), 64 KiB chunks','o'],['KDF:       Argon2id (time=3, memory=64 MiB, threads=4), random per-file salt','o'],['Key file:  not required','o'],['','d'],['$ casemate decrypt notes.txt.enc','c'],['Enter password: ','d'],['✓ Decrypted notes.txt.enc -> notes.txt','o']],
+    dir: [['$ casemate encrypt project/','c'],['Enter password: ','d'],['Confirm password: ','d'],['✓ Encrypted project -> project.tar.enc','o'],['','d'],['$ casemate decrypt -extract project.tar.enc','c'],['Enter password: ','d'],['✓ Extracted project.tar.enc -> project/','o'],['','d'],['Nothing appears until the whole file has authenticated.','d'],['Links, absolute paths and ../ entries are refused.','d']],
     pipe: [['$ tar czf - ./project | casemate encrypt \\','c'],['    -password-file pw -file - -out project.tgz.enc','c'],['','d'],['$ casemate decrypt -password-file pw \\','c'],['    -file project.tgz.enc -out - | tar xzf -','c'],['','d'],['Prompts and errors go to stderr.','d'],['stdout carries data only, so pipelines stay clean.','d']],
     rekey: [['$ casemate info old.enc','c'],['File:      old.enc','o'],['Version:   1','o'],['Cipher:    AES-256-GCM (single block)','o'],['KDF:       PBKDF2-HMAC-SHA256, 100000 iterations, static salt','o'],['Key file:  not supported','o'],['Status:    legacy format, upgrade with: casemate rekey old.enc','o'],['','d'],['$ casemate rekey old.enc','c'],['Enter password: ','d'],['✓ Re-encrypted old.enc -> old.enc','o'],['','d'],['$ casemate rekey -change-password a.enc','c'],['Current password: ','d'],['New password: ','d'],['Confirm new password: ','d'],['✓ Re-encrypted a.enc -> a.enc','o']],
-    key: [['$ casemate encrypt -keyfile ~/.keys/casemate.key notes.txt','c'],['Enter password: ','d'],['Confirm password: ','d'],['✓ Encrypted notes.txt -> notes.txt.enc','o'],['','d'],['$ casemate decrypt notes.txt.enc','c'],['Enter password: ','d'],['Decryption error: notes.txt.enc: this file requires a key file (-keyfile)','d'],['','d'],['$ casemate decrypt -keyfile ~/.keys/casemate.key notes.txt.enc','c'],['Enter password: ','d'],['✓ Decrypted notes.txt.enc -> notes.txt','o']]
+    key: [['$ casemate keygen -out ~/.keys/casemate.key','c'],['✓ Wrote a new 32 byte key file to /home/you/.keys/casemate.key','o'],['Back it up somewhere safe: files encrypted with it cannot be decrypted without it.','d'],['','d'],['$ casemate encrypt -keyfile ~/.keys/casemate.key notes.txt','c'],['Enter password: ','d'],['Confirm password: ','d'],['✓ Encrypted notes.txt -> notes.txt.enc','o'],['','d'],['$ casemate decrypt notes.txt.enc','c'],['Enter password: ','d'],['Decryption error: notes.txt.enc: this file requires a key file (-keyfile)','d'],['','d'],['$ casemate decrypt -keyfile ~/.keys/casemate.key notes.txt.enc','c'],['Enter password: ','d'],['✓ Decrypted notes.txt.enc -> notes.txt','o']]
   };
   var screen = document.getElementById('screen'), tabs = document.getElementById('tabs'), timer;
   function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;'); }

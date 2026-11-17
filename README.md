@@ -90,7 +90,7 @@ Casemate has its own file format ([docs/format.md](docs/format.md)) and has not 
 | Tested in CI | ✅ `ubuntu-latest` | ✅ `macos-latest` |
 | Release binaries | amd64, arm64 | amd64, arm64 |
 | Homebrew | ✅ | ✅ |
-| Build from source | Go 1.26+ | Go 1.26+ |
+| Build from source | Go 1.26.2+ | Go 1.26.2+ |
 
 Windows is not supported for now: no binaries are built and the test suite does not run there.
 
@@ -136,8 +136,18 @@ Releases published after v0.3.0 also carry signed build provenance and one SBOM 
 gh attestation verify casemate_<version>_<os>_<arch>.tar.gz --repo dterana/casemate
 ```
 
+### Debian, Ubuntu, Fedora (`.deb` and `.rpm`)
+Releases after v0.4.0 also include `.deb` and `.rpm` packages for amd64 and arm64. They install the `casemate` binary into `/usr/bin`. Check them against `checksums.txt` like the archives, then:
+
+```bash
+sudo dpkg -i casemate_<version>_linux_amd64.deb      # Debian, Ubuntu
+sudo rpm -i casemate_<version>_linux_amd64.rpm       # Fedora, RHEL
+```
+
+The packages are not published in a package repository, so upgrades are manual.
+
 ### From source
-Building requires Go 1.26 or newer (set by the `golang.org/x/crypto` dependency).
+Building requires Go 1.26.2 or newer (the minimum with the fixed `archive/tar` and `os` standard library).
 ```bash
 git clone https://github.com/dterana/casemate.git
 cd casemate
@@ -154,10 +164,11 @@ The command lives in `cmd/casemate` since v0.4.0. Releases up to v0.3.1 were pub
 
 | Command | What it does |
 |---|---|
-| `casemate encrypt [flags] [file...]` | Encrypt files (writes `<file>.enc`) |
-| `casemate decrypt [flags] [file...]` | Decrypt files (strips `.enc`) |
+| `casemate encrypt [flags] [path...]` | Encrypt files (writes `<file>.enc`) or directories (writes `<dir>.tar.enc`) |
+| `casemate decrypt [flags] [file...]` | Decrypt files (strips `.enc`); with `-extract`, unpack a directory archive |
 | `casemate rekey [flags] [file...]` | Re-encrypt in place with the current format, optionally with a new password or key file |
 | `casemate info [file...]` | Show a file's format without decrypting it |
+| `casemate keygen -out <path>` | Create a random key file for `-keyfile` |
 | `casemate version` | Show version information |
 
 Put flags before the file names. Exit codes: `0` success, `1` an operation failed, `2` invalid flags.
@@ -170,10 +181,13 @@ Put flags before the file names. Exit codes: `0` success, `1` an operation faile
 | `-out <path>` | encrypt, decrypt, rekey | Output file, single input only. `-` writes stdout |
 | `-password-file <path>` | encrypt, decrypt, rekey | Read the password from the first line of a file |
 | `-password-env <name>` | encrypt, decrypt, rekey | Read the password from an environment variable |
+| `-password-fd <n>` | encrypt, decrypt, rekey | Read the password from a file descriptor (3 or higher) |
 | `-keyfile <path>` | encrypt, decrypt, rekey | Use a key file as a second factor |
+| `-extract` | decrypt | Unpack a directory archive into a new directory (`-out` names it) |
 | `-change-password` | rekey | Prompt for a new password |
 | `-new-password-file <path>` | rekey | Read the new password from a file |
 | `-new-password-env <name>` | rekey | Read the new password from an environment variable |
+| `-new-password-fd <n>` | rekey | Read the new password from a file descriptor |
 | `-new-keyfile <path>` | rekey | Set or replace the key file |
 | `-no-keyfile` | rekey | Remove the key file requirement |
 
@@ -188,7 +202,25 @@ Put flags before the file names. Exit codes: `0` success, `1` an operation faile
 
 On a terminal, `encrypt` asks for the password twice so a typo cannot lock you out of your own file.
 
-Decrypting a file that does not end in `.enc` requires `-out`, and the output path must differ from the input path. Casemate refuses both cases instead of overwriting your encrypted file. Directories are not supported; archive them first (for example with `tar`).
+Decrypting a file that does not end in `.enc` requires `-out`, and the output path must differ from the input path. Casemate refuses both cases instead of overwriting your encrypted file. To encrypt a directory, see [Directories](#directories).
+
+### Directories
+```bash
+./casemate encrypt project/                   # creates project.tar.enc
+./casemate decrypt -extract project.tar.enc   # restores project/ (must not exist yet)
+./casemate decrypt -extract -out ~/restore project.tar.enc
+```
+
+`encrypt` packs a directory into a tar stream and encrypts it like any other file, so the file format is unchanged. Only regular files and directories are archived: a symbolic link or special file makes `encrypt` fail and name it, instead of silently leaving it out. Ownership is not recorded, and only permission bits are kept.
+
+`decrypt -extract` is built to be safe on files you did not make:
+
+- Nothing appears at the destination until the whole file has authenticated. Files are unpacked into a hidden staging directory, which is renamed into place on success and removed on any failure, including Ctrl+C.
+- The destination must not exist; Casemate never merges into or overwrites an existing directory.
+- Entries with absolute paths or `..`, links, devices and other special entries are refused.
+- The extracted directory itself is created with mode `0700`.
+
+A plain `casemate decrypt project.tar.enc` still works and gives you the `.tar` file. For compression or other tar options, keep using `tar` yourself as in the examples below.
 
 ### Where the password comes from
 
@@ -198,20 +230,27 @@ Decrypting a file that does not end in `.enc` requires `-out`, and the output pa
 | Pipe | the first line of stdin, when stdin is not a terminal |
 | File | `-password-file <path>`, first line of the file |
 | Environment | `-password-env <NAME>` |
+| File descriptor | `-password-fd <n>`, first line of descriptor `n` (3 or higher) |
 
 ```bash
 echo "mypassword" | ./casemate encrypt secret.txt          # piped (visible in shell history)
 ./casemate decrypt -password-file ~/.secrets/pw  -out - config.yml.enc
 CASEMATE_PASSWORD=... ./casemate decrypt -password-env CASEMATE_PASSWORD config.yml.enc
+./casemate decrypt -password-fd 3 -out - config.yml.enc 3< <(pass show casemate)   # from a secret manager, never on disk
 ```
 
-Spaces inside a password are kept (`correct horse battery staple` works); surrounding whitespace and the line ending are trimmed. A password file that other users can read produces a warning. Prefer `-password-file` or `-password-env` over `echo`, which exposes the password in shell history and process listings.
+Spaces inside a password are kept (`correct horse battery staple` works); surrounding whitespace and the line ending are trimmed. A password file that other users can read produces a warning. Prefer `-password-file`, `-password-env` or `-password-fd` over `echo`, which exposes the password in shell history and process listings. `-password-fd` keeps the password out of the environment and off the disk; Casemate closes only its own copy of the descriptor.
+
+When you set a new password (`encrypt`, or `rekey` with a new password), Casemate warns if it has fewer than 12 characters. The password is still accepted; the warning is advice.
 
 ### Key file (second factor)
 ```bash
-./casemate encrypt -keyfile ~/.keys/seal.key notes.txt
-./casemate decrypt -keyfile ~/.keys/seal.key notes.txt.enc
+./casemate keygen -out ~/.keys/casemate.key                    # 32 random bytes, mode 0600
+./casemate encrypt -keyfile ~/.keys/casemate.key notes.txt
+./casemate decrypt -keyfile ~/.keys/casemate.key notes.txt.enc
 ```
+`keygen` refuses to overwrite an existing file. Back the key file up: without it, files encrypted with it cannot be decrypted. Any file works as a key file (`keygen` just makes a good one), but the whole file content is used, so do not edit it.
+
 The key file is hashed and mixed into the key together with the password, so an attacker needs both. The file records that a key file is required, so decrypting without one gives a clear error. Key files need format V2.
 
 ### stdin and stdout
@@ -232,7 +271,7 @@ tar czf - ./project | ./casemate encrypt -password-file pw -file - -out project.
 ./casemate rekey old.enc                      # same password, current format, atomic in place
 ./casemate rekey -change-password a.enc       # prompts for the current and the new password
 ./casemate rekey -new-password-file new.pw a.enc
-./casemate rekey -new-keyfile seal.key a.enc  # add or replace the key file
+./casemate rekey -new-keyfile casemate.key a.enc  # add or replace the key file
 ./casemate rekey -no-keyfile a.enc            # remove the key file requirement
 ./casemate rekey -out b.enc a.enc             # write elsewhere, keep the original
 ```
@@ -333,6 +372,7 @@ The registry tests fail if a version is registered without a golden vector, if t
 - **Salt**: V2 uses a random per-file salt stored in the header. V1 files use a static salt; upgrade them with `casemate rekey`.
 - **File permissions**: Output files are created with 0600 permissions (read/write only by owner).
 - **Authentication scope**: The tool encrypts and authenticates files with the password, but a file cannot prove who wrote it. For that, use signatures alongside encrypted files.
+- **Threat model**: [docs/threat-model.md](docs/threat-model.md) states what is protected, against whom, and what is not.
 - **Reporting vulnerabilities**: see [SECURITY.md](SECURITY.md); use GitHub's private reporting, not a public issue.
 - **Password in memory**: Casemate zeroes its own copies of the password and key file after use. This is best effort: Go and the terminal layer may keep other copies until the process exits.
 
@@ -341,7 +381,7 @@ The registry tests fail if a version is registered without a golden vector, if t
 - **Pre-1.0**: Command-line flags and file formats may still change before 1.0. Check the release notes when upgrading.
 - **Interrupted runs**: Output is written to a `.casemate-*.tmp` file next to the destination and renamed on success. Ctrl+C and SIGTERM remove it, but if the process is killed with SIGKILL the temp file can remain and is safe to delete.
 - **Buffered stdout decrypt**: `decrypt -out -` and V1 files are held in memory while decrypting (V2 to a file streams with bounded memory).
-- **No directories**: Casemate encrypts single files or streams. Archive directories first.
+- **Directories**: supported as uncompressed tar archives of regular files and directories only (no symbolic links, no ownership). Use `tar` yourself for compression or other options.
 - **Windows**: not supported for now. No Windows binaries are built and the test suite does not run there.
 - **No Keychain integration**: Use `-password-file` or `-password-env` to feed a password from your secret store.
 

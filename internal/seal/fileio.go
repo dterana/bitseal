@@ -36,7 +36,7 @@ func removeTrackedTemps() {
 	temps.mu.Lock()
 	defer temps.mu.Unlock()
 	for p := range temps.paths {
-		_ = os.Remove(p) // best effort: the process is exiting
+		_ = os.RemoveAll(p) // best effort: the process is exiting; staging directories are not empty
 		delete(temps.paths, p)
 	}
 }
