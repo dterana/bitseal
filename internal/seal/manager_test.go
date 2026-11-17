@@ -146,12 +146,6 @@ func TestEncryptFileErrors(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
-	t.Run("input is a directory", func(t *testing.T) {
-		err := m.EncryptFile(dir, "", sec("pw"))
-		if err == nil || !strings.Contains(err.Error(), "is a directory") {
-			t.Fatalf("unexpected error: %v", err)
-		}
-	})
 	t.Run("empty password", func(t *testing.T) {
 		in := filepath.Join(dir, "a.txt")
 		writeFile(t, in, []byte("x"))
@@ -936,14 +930,23 @@ func TestRemoveTrackedTemps(t *testing.T) {
 	a, b := filepath.Join(dir, ".casemate-a.tmp"), filepath.Join(dir, ".casemate-b.tmp")
 	writeFile(t, a, []byte("x"))
 	writeFile(t, b, []byte("x"))
+	staging := filepath.Join(dir, ".casemate-staging.tmp")
+	if err := os.MkdirAll(filepath.Join(staging, "sub"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(staging, "sub", "f"), []byte("x"))
 	trackTemp(a)
 	trackTemp(b)
+	trackTemp(staging)
 	untrackTemp(b)
 
 	removeTrackedTemps()
 
 	if _, err := os.Stat(a); err == nil {
 		t.Fatal("tracked temp file was not removed")
+	}
+	if _, err := os.Stat(staging); err == nil {
+		t.Fatal("tracked staging directory was not removed")
 	}
 	if _, err := os.Stat(b); err != nil {
 		t.Fatal("untracked file must not be removed")

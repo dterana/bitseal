@@ -73,8 +73,10 @@ const usageText = `Casemate - File Encryption CLI Tool
 Version: v%s
 
 Usage:
-  casemate encrypt [flags] [file...]   Encrypt files (writes <file>.enc)
-  casemate decrypt [flags] [file...]   Decrypt files (strips .enc)
+  casemate encrypt [flags] [path...]   Encrypt files (writes <file>.enc) or directories
+                                      (writes <dir>.tar.enc)
+  casemate decrypt [flags] [file...]   Decrypt files (strips .enc); with -extract, unpack
+                                      a directory archive into a new directory
   casemate rekey   [flags] [file...]   Re-encrypt files in place with the current
                                       format, optionally with a new password or key file
   casemate info    [file...]           Show a file's format without decrypting it

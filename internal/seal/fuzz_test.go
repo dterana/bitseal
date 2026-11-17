@@ -1,7 +1,10 @@
 package seal
 
 import (
+	"archive/tar"
 	"bytes"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -106,6 +109,59 @@ func FuzzRoundTripV2(f *testing.F) {
 		dec, err := c.Decrypt(enc, sec(password))
 		if err != nil || !bytes.Equal(dec, plaintext) {
 			t.Fatalf("round trip failed: %v", err)
+		}
+	})
+}
+
+// Arbitrary tar bytes must never panic the extractor, write outside its
+// root, or create anything but regular files and directories.
+func FuzzExtractTar(f *testing.F) {
+	var valid bytes.Buffer
+	tw := tar.NewWriter(&valid)
+	_ = tw.WriteHeader(&tar.Header{Name: "d/", Typeflag: tar.TypeDir, Mode: 0o755})
+	_ = tw.WriteHeader(&tar.Header{Name: "d/f", Typeflag: tar.TypeReg, Mode: 0o644, Size: 3})
+	_, _ = tw.Write([]byte("abc"))
+	_ = tw.Close()
+	f.Add(valid.Bytes())
+
+	for _, h := range []tar.Header{
+		{Name: "../x", Typeflag: tar.TypeReg, Mode: 0o644},
+		{Name: "/abs", Typeflag: tar.TypeReg, Mode: 0o644},
+		{Name: "l", Typeflag: tar.TypeSymlink, Linkname: "../..", Mode: 0o777},
+		{Name: "h", Typeflag: tar.TypeLink, Linkname: "d/f", Mode: 0o644},
+	} {
+		var b bytes.Buffer
+		w := tar.NewWriter(&b)
+		_ = w.WriteHeader(&h)
+		_ = w.Close()
+		f.Add(b.Bytes())
+	}
+	f.Add([]byte{})
+	f.Add(make([]byte, 1024))
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		parent := t.TempDir()
+		root := filepath.Join(parent, "stage")
+		if err := os.Mkdir(root, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		x := &extractor{root: root}
+		_ = x.untar(bytes.NewReader(data))
+
+		if entries, err := os.ReadDir(parent); err != nil || len(entries) != 1 {
+			t.Fatalf("extraction wrote outside its root: %v, %v", entries, err)
+		}
+		err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if !d.IsDir() && !d.Type().IsRegular() {
+				t.Fatalf("%s is neither a file nor a directory", path)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
 		}
 	})
 }

@@ -79,13 +79,16 @@ func (m *Manager) currentCipher() (StreamCipher, error) {
 	return sc, nil
 }
 
-// ResolveEncryptOut picks the default output for encrypt.
+// ResolveEncryptOut picks the default output for encrypt. A directory becomes
+// <dir>.tar.enc.
 func ResolveEncryptOut(in, out string) string {
 	switch {
 	case out != "":
 		return out
 	case in == StdioPath:
 		return StdioPath
+	case isDir(in):
+		return filepath.Clean(in) + ArchiveSuffix
 	}
 	return in + ".enc"
 }
@@ -114,7 +117,7 @@ func (m *Manager) openInput(path string) (io.Reader, func(), error) {
 	fi, err := f.Stat()
 	if err == nil && fi.IsDir() {
 		_ = f.Close()
-		return nil, nil, fmt.Errorf("failed to read file: %s is a directory (archive it first, e.g. with tar)", path)
+		return nil, nil, fmt.Errorf("failed to read file: %s is a directory (only encrypt accepts directories)", path)
 	}
 	return f, func() { _ = f.Close() }, nil
 }
@@ -140,8 +143,12 @@ func (m *Manager) writeOutput(out string, buffered bool, fn func(io.Writer) erro
 	return nil
 }
 
-// EncryptFile encrypts a file (or stdin) with the current cipher version
+// EncryptFile encrypts a file (or stdin) with the current cipher version. A
+// directory is archived as a tar stream first (see ExtractFile to read it back).
 func (m *Manager) EncryptFile(inputPath, outputPath string, secret Secret) error {
+	if inputPath != StdioPath && isDir(inputPath) {
+		return m.encryptDir(inputPath, outputPath, secret)
+	}
 	sc, err := m.currentCipher()
 	if err != nil {
 		return err
