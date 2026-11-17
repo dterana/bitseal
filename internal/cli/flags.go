@@ -71,24 +71,31 @@ func containsStdin(files []string) bool {
 type secretFlags struct {
 	passwordFile string
 	passwordEnv  string
+	passwordFD   int
 	keyFile      string
 }
+
+// noFD is the default of the -password-fd flags: no descriptor given.
+const noFD = -1
 
 func (f *secretFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&f.passwordFile, "password-file", "", "read the password from the first line of this file")
 	fs.StringVar(&f.passwordEnv, "password-env", "", "read the password from this environment variable")
+	fs.IntVar(&f.passwordFD, "password-fd", noFD, "read the password from the first line of this file descriptor")
 	fs.StringVar(&f.keyFile, "keyfile", "", "use this key file as a second factor")
 }
 
 func (a *App) readPassword(f secretFlags, prompt string, confirm, stdinBusy bool) ([]byte, error) {
-	if f.passwordFile != "" && f.passwordEnv != "" {
-		return nil, fmt.Errorf("use only one of -password-file and -password-env")
+	if countSet(f.passwordFile != "", f.passwordEnv != "", f.passwordFD != noFD) > 1 {
+		return nil, fmt.Errorf("use only one of -password-file, -password-env and -password-fd")
 	}
 	switch {
 	case f.passwordFile != "":
 		return a.readPasswordFile(f.passwordFile)
 	case f.passwordEnv != "":
 		return readPasswordEnv(f.passwordEnv)
+	case f.passwordFD != noFD:
+		return readPasswordFD(f.passwordFD)
 	case stdinBusy:
 		return nil, fmt.Errorf("cannot read the password from stdin while the input is stdin; use -password-file or -password-env")
 	case confirm:
@@ -101,6 +108,9 @@ func (a *App) resolveSecret(f secretFlags, prompt string, confirm, stdinBusy boo
 	pw, err := a.readPassword(f, prompt, confirm, stdinBusy)
 	if err != nil {
 		return seal.Secret{}, err
+	}
+	if confirm {
+		a.warnIfShort(pw)
 	}
 	secret := seal.Secret{Password: pw}
 	if f.keyFile != "" {
@@ -120,6 +130,7 @@ type rekeyFlags struct {
 	changePassword  bool
 	newPasswordFile string
 	newPasswordEnv  string
+	newPasswordFD   int
 	newKeyFile      string
 	noKeyFile       bool
 }
@@ -128,17 +139,18 @@ func (r *rekeyFlags) register(fs *flag.FlagSet) {
 	fs.BoolVar(&r.changePassword, "change-password", false, "prompt for a new password")
 	fs.StringVar(&r.newPasswordFile, "new-password-file", "", "read the new password from the first line of this file")
 	fs.StringVar(&r.newPasswordEnv, "new-password-env", "", "read the new password from this environment variable")
+	fs.IntVar(&r.newPasswordFD, "new-password-fd", noFD, "read the new password from the first line of this file descriptor")
 	fs.StringVar(&r.newKeyFile, "new-keyfile", "", "set or replace the key file")
 	fs.BoolVar(&r.noKeyFile, "no-keyfile", false, "remove the key file requirement")
 }
 
 func (r rekeyFlags) changesPassword() bool {
-	return r.changePassword || r.newPasswordFile != "" || r.newPasswordEnv != ""
+	return r.changePassword || r.newPasswordFile != "" || r.newPasswordEnv != "" || r.newPasswordFD != noFD
 }
 
 func (a *App) newSecret(r rekeyFlags, old seal.Secret) (seal.Secret, error) {
-	if r.newPasswordFile != "" && r.newPasswordEnv != "" {
-		return seal.Secret{}, fmt.Errorf("use only one of -new-password-file and -new-password-env")
+	if countSet(r.newPasswordFile != "", r.newPasswordEnv != "", r.newPasswordFD != noFD) > 1 {
+		return seal.Secret{}, fmt.Errorf("use only one of -new-password-file, -new-password-env and -new-password-fd")
 	}
 	if r.noKeyFile && r.newKeyFile != "" {
 		return seal.Secret{}, fmt.Errorf("-no-keyfile and -new-keyfile cannot be combined")
@@ -151,11 +163,17 @@ func (a *App) newSecret(r rekeyFlags, old seal.Secret) (seal.Secret, error) {
 		next.Password, err = a.readPasswordFile(r.newPasswordFile)
 	case r.newPasswordEnv != "":
 		next.Password, err = readPasswordEnv(r.newPasswordEnv)
+	case r.newPasswordFD != noFD:
+		next.Password, err = readPasswordFD(r.newPasswordFD)
 	case r.changePassword:
 		next.Password, err = a.promptNewPassword("New password: ", "Confirm new password: ")
 	}
 	if err != nil {
 		return seal.Secret{}, err
+	}
+
+	if r.changesPassword() {
+		a.warnIfShort(next.Password)
 	}
 
 	switch {
@@ -172,4 +190,14 @@ func (a *App) newSecret(r rekeyFlags, old seal.Secret) (seal.Secret, error) {
 		next.KeyFile = kf
 	}
 	return next, nil
+}
+
+func countSet(flags ...bool) int {
+	n := 0
+	for _, set := range flags {
+		if set {
+			n++
+		}
+	}
+	return n
 }
