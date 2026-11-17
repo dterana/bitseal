@@ -90,7 +90,7 @@ Casemate has its own file format ([docs/format.md](docs/format.md)) and has not 
 | Tested in CI | ✅ `ubuntu-latest` | ✅ `macos-latest` |
 | Release binaries | amd64, arm64 | amd64, arm64 |
 | Homebrew | ✅ | ✅ |
-| Build from source | Go 1.26+ | Go 1.26+ |
+| Build from source | Go 1.26.2+ | Go 1.26.2+ |
 
 Windows is not supported for now: no binaries are built and the test suite does not run there.
 
@@ -137,7 +137,7 @@ gh attestation verify casemate_<version>_<os>_<arch>.tar.gz --repo dterana/casem
 ```
 
 ### From source
-Building requires Go 1.26 or newer (set by the `golang.org/x/crypto` dependency).
+Building requires Go 1.26.2 or newer (the minimum with the fixed `archive/tar` and `os` standard library).
 ```bash
 git clone https://github.com/dterana/casemate.git
 cd casemate
