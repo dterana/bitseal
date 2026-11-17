@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"crypto/rand"
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/dterana/casemate/internal/seal"
@@ -180,4 +183,48 @@ func formatInfo(name string, info seal.FileInfo) string {
 		fmt.Fprintf(&b, "Key file:  not required\n")
 	}
 	return b.String()
+}
+
+// keyFileSize is the number of random bytes in a generated key file.
+const keyFileSize = 32
+
+func (a *App) cmdKeygen(args []string) error {
+	fs := a.newFlagSet("keygen")
+	var out string
+	fs.StringVar(&out, "out", "", "where to write the new key file (required, must not exist)")
+	if err := parseFlags(fs, args); err != nil {
+		return err
+	}
+	if out == "" || fs.NArg() > 0 {
+		fmt.Fprintln(a.Stderr, "usage: casemate keygen -out <path>")
+		return errUsage
+	}
+
+	key := make([]byte, keyFileSize)
+	if _, err := rand.Read(key); err != nil {
+		return fmt.Errorf("failed to generate a key: %w", err)
+	}
+	defer seal.Wipe(key)
+
+	// O_EXCL: never overwrite an existing key, which would lock its files.
+	f, err := os.OpenFile(out, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("%s already exists; refusing to overwrite a key file", out)
+		}
+		return fmt.Errorf("failed to create key file: %w", err)
+	}
+	if _, err := f.Write(key); err != nil {
+		_ = f.Close()
+		_ = os.Remove(out)
+		return fmt.Errorf("failed to write key file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(out)
+		return fmt.Errorf("failed to write key file: %w", err)
+	}
+
+	fmt.Fprintf(a.Stderr, "✓ Wrote a new %d byte key file to %s\n", keyFileSize, out)
+	fmt.Fprintln(a.Stderr, "Back it up somewhere safe: files encrypted with it cannot be decrypted without it.")
+	return nil
 }

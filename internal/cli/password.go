@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"unicode/utf8"
 
 	"github.com/dterana/casemate/internal/seal"
 )
@@ -135,4 +136,35 @@ func readKeyFile(path string) ([]byte, error) {
 		return nil, fmt.Errorf("key file %s is empty", path)
 	}
 	return data, nil
+}
+
+// minPasswordLength is the length below which Casemate warns. It is advice,
+// not a rule: the password is still accepted.
+const minPasswordLength = 12
+
+// warnIfShort tells the user a new password is short. Argon2id slows guessing
+// but cannot save a guessable password.
+func (a *App) warnIfShort(pw []byte) {
+	if n := utf8.RuneCount(pw); n < minPasswordLength {
+		fmt.Fprintf(a.Stderr, "Warning: the password has only %d characters; use a passphrase of %d or more, or add -keyfile\n", n, minPasswordLength)
+	}
+}
+
+// readPasswordFD reads the first line of an inherited file descriptor as the
+// password, for callers that pass secrets over a pipe (for example
+// `casemate decrypt -password-fd 3 f.enc 3< <(pass show casemate)`).
+func readPasswordFD(fd int) ([]byte, error) {
+	if fd <= 2 {
+		return nil, fmt.Errorf("-password-fd must be 3 or higher (0, 1 and 2 are stdin, stdout and stderr)")
+	}
+	f, err := openFD(fd)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read password from descriptor %d: %w", fd, err)
+	}
+	defer func() { _ = f.Close() }()
+	pw, err := readPasswordLine(f)
+	if err != nil {
+		return nil, fmt.Errorf("descriptor %d: %w", fd, err)
+	}
+	return pw, nil
 }
