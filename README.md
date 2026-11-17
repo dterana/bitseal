@@ -2,8 +2,8 @@
 
 # 🔐 Casemate
 
-**Future-proof file encryption for the command line.**
-Versioned formats, so files you encrypt today still open after the algorithms change.
+**Encrypt a folder with a password, and open it safely years later.**
+One static binary, nothing to set up, and a versioned format so old files keep decrypting.
 
 [![CI](https://github.com/dterana/casemate/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/dterana/casemate/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/dterana/casemate?include_prereleases&sort=semver)](https://github.com/dterana/casemate/releases)
@@ -34,6 +34,7 @@ Versioned formats, so files you encrypt today still open after the algorithms ch
 - [Alternatives](#alternatives)
 - [Compatibility](#compatibility)
 - [Installation](#installation)
+- [Verify a release](#verify-a-release)
 - [Usage](#usage)
 - [How it works](#how-it-works)
 - [Architecture](#architecture)
@@ -49,19 +50,27 @@ Versioned formats, so files you encrypt today still open after the algorithms ch
 ```bash
 go install github.com/dterana/casemate/cmd/casemate@latest
 
-casemate encrypt notes.txt            # asks for a password twice, writes notes.txt.enc
-casemate decrypt notes.txt.enc        # restores notes.txt
-casemate info notes.txt.enc           # shows the format, no password needed
+casemate encrypt project/             # asks for a password twice, writes project.tar.enc
+casemate decrypt -extract project.tar.enc   # restores project/, only after the whole file authenticates
+casemate info project.tar.enc         # shows the format, no password needed
 ```
+
+Single files work the same way: `casemate encrypt notes.txt` writes `notes.txt.enc`.
 
 ## Why Casemate
 
-Casemate is a lightweight command-line utility for encrypting and decrypting files with automatic version management. Unlike tools like OpenSSL that change their defaults and break backward compatibility, Casemate embeds version information in every encrypted file, allowing it to decrypt old files even after algorithm changes.
+Casemate does one job: encrypt a folder or a file with a password (optionally plus a key file) and get it back intact, on any Linux or macOS machine, from a single binary. Two things set it apart.
+
+**Folders are handled safely.** Unpacking an archive you did not make is where tools get hurt. `decrypt -extract` writes into a hidden staging directory, renames it into place only after every byte has authenticated, refuses paths that escape the target, links and special files, and never merges into an existing directory. A wrong password or a tampered file leaves nothing behind. This path is fuzzed.
+
+**Old files keep opening.** Unlike tools that change their defaults between releases, Casemate writes the format version into every file and keeps a decoder for each one it has shipped. Golden test vectors in CI fail the build if an old file stops decrypting.
 
 | | |
 |---|---|
+| 📁 **Folders** | `encrypt <dir>` and `decrypt -extract`, with extraction hardened against hostile archives |
 | 🔒 **Future-proof** | Every file records its format. Decrypt old files forever, even after updating algorithms |
 | 🔐 **Secure** | AES-256-GCM, Argon2id key derivation, per-file salts, optional key file, hidden password input |
+| 🧾 **Verifiable** | Releases ship checksums, signed build provenance and an SBOM per archive. See [Verify a release](#verify-a-release) |
 | 🌊 **Streaming** | Chunked format: large files use bounded memory and can flow through pipes |
 | 🧰 **Scriptable** | Password from a file or environment variable, stdin and stdout, clean stdout, real exit codes |
 | 🔁 **Upgradable** | `rekey` moves old files to the current format, or changes the password or key file, atomically |
@@ -70,14 +79,14 @@ Casemate is a lightweight command-line utility for encrypting and decrypting fil
 
 ## Alternatives
 
-Casemate covers a narrow job: encrypt a file with a password, optionally combined with a key file, from one static binary. Other tools cover the same ground, and some are the better choice:
+Casemate covers a narrow job: encrypt a folder or file with a password, optionally combined with a key file, from one static binary. Other tools cover the same ground, and some are the better choice:
 
 | Tool | Choose it when |
 |---|---|
-| [`age`](https://age-encryption.org) | You want the most widely reviewed small tool for file encryption, or public-key recipients. `age -p` is the closest equivalent to Casemate |
+| [`age`](https://age-encryption.org) | You want the most widely reviewed small tool for file encryption, or public-key recipients. `age -p` is the closest equivalent to Casemate. It leaves folders to `tar` |
 | [`sops`](https://github.com/getsops/sops) | You keep secrets inside a repository and want per-value encryption, diffs and KMS integration |
 | `gpg` | You already have a GPG key infrastructure |
-| Casemate | You want AES-256-GCM with Argon2id, a password plus a key file as a combined factor, and an on-disk format that stays decryptable across versions |
+| Casemate | You want to encrypt folders with a safe extract step, AES-256-GCM with Argon2id, a password plus a key file as a combined factor, and an on-disk format that stays decryptable across versions |
 
 Casemate has its own file format ([docs/format.md](docs/format.md)) and has not had an independent security audit. For data where that matters, prefer an audited tool.
 
@@ -124,17 +133,7 @@ brew install casemate
 The formula lives in [dterana/homebrew-tap](https://github.com/dterana/homebrew-tap) and follows the latest release automatically.
 
 ### From a release
-Download the archive for your platform from the [releases page](https://github.com/dterana/casemate/releases), check it against `checksums.txt`, and put `casemate` on your `PATH`. Releases are marked as pre-releases until 1.0.
-
-```bash
-shasum -a 256 -c checksums.txt --ignore-missing
-```
-
-Releases published after v0.3.0 also carry signed build provenance and one SBOM (`*.sbom.json`) per archive. Verify an archive was built by this repository's release workflow:
-
-```bash
-gh attestation verify casemate_<version>_<os>_<arch>.tar.gz --repo dterana/casemate
-```
+Download the archive for your platform from the [releases page](https://github.com/dterana/casemate/releases), [verify it](#verify-a-release), and put `casemate` on your `PATH`. Releases are marked as pre-releases until 1.0.
 
 ### Debian, Ubuntu, Fedora (`.deb` and `.rpm`)
 Releases after v0.4.0 also include `.deb` and `.rpm` packages for amd64 and arm64. They install the `casemate` binary into `/usr/bin`. Check them against `checksums.txt` like the archives, then:
@@ -159,6 +158,24 @@ make build        # embeds the git revision in `casemate version`
 go install github.com/dterana/casemate/cmd/casemate@latest
 ```
 The command lives in `cmd/casemate` since v0.4.0. Releases up to v0.3.1 were published under the previous name, Bitseal, and install from `github.com/dterana/bitseal/cmd/bitseal@v0.3.1` (v0.1.0 from the repository root, `github.com/dterana/bitseal@v0.1.0`).
+
+## Verify a release
+
+Before you trust a binary with your data, check that it is the one this repository built. Two checks:
+
+```bash
+# 1. The file matches the published checksums
+shasum -a 256 -c checksums.txt --ignore-missing
+
+# 2. The file was built by this repository's release workflow, from the tagged commit
+gh attestation verify casemate_<version>_<os>_<arch>.tar.gz --repo dterana/casemate
+```
+
+The same two checks work for the `.deb` and `.rpm` packages. Releases published after v0.3.0 carry signed build provenance for every archive (and, after v0.4.0, every package), and one SBOM (`*.sbom.json`) per archive listing exactly what went into the build.
+
+What this proves: the artifact came out of the release workflow in this repository, at the commit its tag points to. What it does not prove: that the source is free of bugs. Casemate has not had an independent security audit. Its [threat model](docs/threat-model.md) and [format specification](docs/format.md) are written so you can review the design yourself, and the format is small enough to implement a compatible reader from the document alone.
+
+You can also skip the binaries and build from source (see [From source](#from-source)); the module has two direct dependencies, both from the Go project.
 
 ## Usage
 
