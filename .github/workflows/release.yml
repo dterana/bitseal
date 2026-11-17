@@ -21,6 +21,14 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - name: Check the tag matches the version in the code
+        if: github.event_name == 'push'
+        run: |
+          want="v$(sed -n 's/^const Version = "\(.*\)"$/\1/p' cmd/casemate/version.go)"
+          if [ "$want" = "v" ] || [ "$GITHUB_REF_NAME" != "$want" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match $want in cmd/casemate/version.go"
+            exit 1
+          fi
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
