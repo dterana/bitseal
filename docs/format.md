@@ -110,6 +110,27 @@ The body is a sequence of one or more chunks. Each chunk is
   place after the last chunk authenticated.
 - `counter` is a 32 bit value; a file cannot have more than 2^32 chunks.
 
+## Directory archives
+
+A directory is not a separate format. `casemate encrypt <dir>` writes an
+ordinary encrypted file (any version, normally 2) whose plaintext is a tar
+stream, and names it `<dir>.tar.enc`. A reader that knows nothing about
+directories can decrypt it and gets the tar file.
+
+Conventions of the tar stream written by Casemate:
+
+- Entry names are relative to the archived directory, use `/`, and never start
+  with `/` or contain `..`. Directory entries end in `/`. The archived
+  directory itself has no entry.
+- Only regular files and directories are written. Modes keep the permission
+  bits only (no setuid, setgid or sticky). Owner and group are 0 and empty.
+- Entries are in lexical order.
+
+A reader that unpacks such a stream MUST refuse entries with absolute paths or
+`..` components, and every entry that is not a regular file or a directory. It
+SHOULD unpack into a staging location and publish the result only after the
+whole file authenticated, as `casemate decrypt -extract` does.
+
 ## Rules for evolving the format
 
 These rules are what "future proof" means for Casemate.

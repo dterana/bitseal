@@ -44,8 +44,10 @@ func (a *App) cmdDecrypt(args []string) error {
 	fs := a.newFlagSet("decrypt")
 	var in fileArgs
 	var sf secretFlags
+	var extract bool
 	in.register(fs, true)
 	sf.register(fs)
+	fs.BoolVar(&extract, "extract", false, "unpack a directory archive (<dir>.tar.enc) into a new directory; -out names it")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -63,6 +65,16 @@ func (a *App) cmdDecrypt(args []string) error {
 	manager := a.manager()
 	failed := 0
 	for _, f := range files {
+		if extract {
+			if err := manager.ExtractFile(f, in.out, secret); err != nil {
+				a.reportFailure("Extraction error", f, err)
+				failed++
+				continue
+			}
+			dest, _ := seal.ResolveExtractOut(f, in.out)
+			fmt.Fprintf(a.Stderr, "✓ Extracted %s -> %s/\n", inLabel(f), dest)
+			continue
+		}
 		if err := manager.DecryptFile(f, in.out, secret); err != nil {
 			a.reportFailure("Decryption error", f, err)
 			failed++

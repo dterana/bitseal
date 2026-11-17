@@ -275,11 +275,38 @@ func TestE2EInfoOnGoldenFiles(t *testing.T) {
 	}
 }
 
-func TestE2EDirectoryInputRefused(t *testing.T) {
+func TestE2EDecryptDirectoryRefused(t *testing.T) {
 	dir := t.TempDir()
-	r := runBin(t, "pw\n", nil, "encrypt", dir)
+	r := runBin(t, "pw\n", nil, "decrypt", "-out", filepath.Join(dir, "x"), dir)
 	if r.code != 1 || !strings.Contains(r.stderr, "is a directory") {
 		t.Fatalf("%+v", r)
+	}
+}
+
+func TestE2EDirectoryRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "project")
+	if err := os.MkdirAll(filepath.Join(src, "sub", "empty"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(src, "a.txt"), []byte("alpha"))
+	writeFile(t, filepath.Join(src, "sub", "b.txt"), []byte("beta"))
+
+	mustBin(t, "a long enough passphrase\n", nil, "encrypt", src)
+	archive := src + ".tar.enc"
+	if _, err := os.Stat(archive); err != nil {
+		t.Fatalf("expected %s: %v", archive, err)
+	}
+	if err := os.RemoveAll(src); err != nil {
+		t.Fatal(err)
+	}
+
+	mustBin(t, "a long enough passphrase\n", nil, "decrypt", "-extract", archive)
+	if string(readFile(t, filepath.Join(src, "sub", "b.txt"))) != "beta" {
+		t.Fatal("extracted content differs")
+	}
+	if fi, err := os.Stat(filepath.Join(src, "sub", "empty")); err != nil || !fi.IsDir() {
+		t.Fatalf("empty directory not restored: %v", err)
 	}
 }
 

@@ -154,8 +154,8 @@ The command lives in `cmd/casemate` since v0.4.0. Releases up to v0.3.1 were pub
 
 | Command | What it does |
 |---|---|
-| `casemate encrypt [flags] [file...]` | Encrypt files (writes `<file>.enc`) |
-| `casemate decrypt [flags] [file...]` | Decrypt files (strips `.enc`) |
+| `casemate encrypt [flags] [path...]` | Encrypt files (writes `<file>.enc`) or directories (writes `<dir>.tar.enc`) |
+| `casemate decrypt [flags] [file...]` | Decrypt files (strips `.enc`); with `-extract`, unpack a directory archive |
 | `casemate rekey [flags] [file...]` | Re-encrypt in place with the current format, optionally with a new password or key file |
 | `casemate info [file...]` | Show a file's format without decrypting it |
 | `casemate version` | Show version information |
@@ -171,6 +171,7 @@ Put flags before the file names. Exit codes: `0` success, `1` an operation faile
 | `-password-file <path>` | encrypt, decrypt, rekey | Read the password from the first line of a file |
 | `-password-env <name>` | encrypt, decrypt, rekey | Read the password from an environment variable |
 | `-keyfile <path>` | encrypt, decrypt, rekey | Use a key file as a second factor |
+| `-extract` | decrypt | Unpack a directory archive into a new directory (`-out` names it) |
 | `-change-password` | rekey | Prompt for a new password |
 | `-new-password-file <path>` | rekey | Read the new password from a file |
 | `-new-password-env <name>` | rekey | Read the new password from an environment variable |
@@ -188,7 +189,25 @@ Put flags before the file names. Exit codes: `0` success, `1` an operation faile
 
 On a terminal, `encrypt` asks for the password twice so a typo cannot lock you out of your own file.
 
-Decrypting a file that does not end in `.enc` requires `-out`, and the output path must differ from the input path. Casemate refuses both cases instead of overwriting your encrypted file. Directories are not supported; archive them first (for example with `tar`).
+Decrypting a file that does not end in `.enc` requires `-out`, and the output path must differ from the input path. Casemate refuses both cases instead of overwriting your encrypted file. To encrypt a directory, see [Directories](#directories).
+
+### Directories
+```bash
+./casemate encrypt project/                   # creates project.tar.enc
+./casemate decrypt -extract project.tar.enc   # restores project/ (must not exist yet)
+./casemate decrypt -extract -out ~/restore project.tar.enc
+```
+
+`encrypt` packs a directory into a tar stream and encrypts it like any other file, so the file format is unchanged. Only regular files and directories are archived: a symbolic link or special file makes `encrypt` fail and name it, instead of silently leaving it out. Ownership is not recorded, and only permission bits are kept.
+
+`decrypt -extract` is built to be safe on files you did not make:
+
+- Nothing appears at the destination until the whole file has authenticated. Files are unpacked into a hidden staging directory, which is renamed into place on success and removed on any failure, including Ctrl+C.
+- The destination must not exist; Casemate never merges into or overwrites an existing directory.
+- Entries with absolute paths or `..`, links, devices and other special entries are refused.
+- The extracted directory itself is created with mode `0700`.
+
+A plain `casemate decrypt project.tar.enc` still works and gives you the `.tar` file. For compression or other tar options, keep using `tar` yourself as in the examples below.
 
 ### Where the password comes from
 
@@ -341,7 +360,7 @@ The registry tests fail if a version is registered without a golden vector, if t
 - **Pre-1.0**: Command-line flags and file formats may still change before 1.0. Check the release notes when upgrading.
 - **Interrupted runs**: Output is written to a `.casemate-*.tmp` file next to the destination and renamed on success. Ctrl+C and SIGTERM remove it, but if the process is killed with SIGKILL the temp file can remain and is safe to delete.
 - **Buffered stdout decrypt**: `decrypt -out -` and V1 files are held in memory while decrypting (V2 to a file streams with bounded memory).
-- **No directories**: Casemate encrypts single files or streams. Archive directories first.
+- **Directories**: supported as uncompressed tar archives of regular files and directories only (no symbolic links, no ownership). Use `tar` yourself for compression or other options.
 - **Windows**: not supported for now. No Windows binaries are built and the test suite does not run there.
 - **No Keychain integration**: Use `-password-file` or `-password-env` to feed a password from your secret store.
 
