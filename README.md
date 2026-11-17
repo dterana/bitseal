@@ -158,6 +158,7 @@ The command lives in `cmd/casemate` since v0.4.0. Releases up to v0.3.1 were pub
 | `casemate decrypt [flags] [file...]` | Decrypt files (strips `.enc`) |
 | `casemate rekey [flags] [file...]` | Re-encrypt in place with the current format, optionally with a new password or key file |
 | `casemate info [file...]` | Show a file's format without decrypting it |
+| `casemate keygen -out <path>` | Create a random key file for `-keyfile` |
 | `casemate version` | Show version information |
 
 Put flags before the file names. Exit codes: `0` success, `1` an operation failed, `2` invalid flags.
@@ -170,10 +171,12 @@ Put flags before the file names. Exit codes: `0` success, `1` an operation faile
 | `-out <path>` | encrypt, decrypt, rekey | Output file, single input only. `-` writes stdout |
 | `-password-file <path>` | encrypt, decrypt, rekey | Read the password from the first line of a file |
 | `-password-env <name>` | encrypt, decrypt, rekey | Read the password from an environment variable |
+| `-password-fd <n>` | encrypt, decrypt, rekey | Read the password from a file descriptor (3 or higher) |
 | `-keyfile <path>` | encrypt, decrypt, rekey | Use a key file as a second factor |
 | `-change-password` | rekey | Prompt for a new password |
 | `-new-password-file <path>` | rekey | Read the new password from a file |
 | `-new-password-env <name>` | rekey | Read the new password from an environment variable |
+| `-new-password-fd <n>` | rekey | Read the new password from a file descriptor |
 | `-new-keyfile <path>` | rekey | Set or replace the key file |
 | `-no-keyfile` | rekey | Remove the key file requirement |
 
@@ -198,20 +201,27 @@ Decrypting a file that does not end in `.enc` requires `-out`, and the output pa
 | Pipe | the first line of stdin, when stdin is not a terminal |
 | File | `-password-file <path>`, first line of the file |
 | Environment | `-password-env <NAME>` |
+| File descriptor | `-password-fd <n>`, first line of descriptor `n` (3 or higher) |
 
 ```bash
 echo "mypassword" | ./casemate encrypt secret.txt          # piped (visible in shell history)
 ./casemate decrypt -password-file ~/.secrets/pw  -out - config.yml.enc
 CASEMATE_PASSWORD=... ./casemate decrypt -password-env CASEMATE_PASSWORD config.yml.enc
+./casemate decrypt -password-fd 3 -out - config.yml.enc 3< <(pass show casemate)   # from a secret manager, never on disk
 ```
 
-Spaces inside a password are kept (`correct horse battery staple` works); surrounding whitespace and the line ending are trimmed. A password file that other users can read produces a warning. Prefer `-password-file` or `-password-env` over `echo`, which exposes the password in shell history and process listings.
+Spaces inside a password are kept (`correct horse battery staple` works); surrounding whitespace and the line ending are trimmed. A password file that other users can read produces a warning. Prefer `-password-file`, `-password-env` or `-password-fd` over `echo`, which exposes the password in shell history and process listings. `-password-fd` keeps the password out of the environment and off the disk; Casemate closes only its own copy of the descriptor.
+
+When you set a new password (`encrypt`, or `rekey` with a new password), Casemate warns if it has fewer than 12 characters. The password is still accepted; the warning is advice.
 
 ### Key file (second factor)
 ```bash
-./casemate encrypt -keyfile ~/.keys/seal.key notes.txt
-./casemate decrypt -keyfile ~/.keys/seal.key notes.txt.enc
+./casemate keygen -out ~/.keys/casemate.key                    # 32 random bytes, mode 0600
+./casemate encrypt -keyfile ~/.keys/casemate.key notes.txt
+./casemate decrypt -keyfile ~/.keys/casemate.key notes.txt.enc
 ```
+`keygen` refuses to overwrite an existing file. Back the key file up: without it, files encrypted with it cannot be decrypted. Any file works as a key file (`keygen` just makes a good one), but the whole file content is used, so do not edit it.
+
 The key file is hashed and mixed into the key together with the password, so an attacker needs both. The file records that a key file is required, so decrypting without one gives a clear error. Key files need format V2.
 
 ### stdin and stdout
@@ -232,7 +242,7 @@ tar czf - ./project | ./casemate encrypt -password-file pw -file - -out project.
 ./casemate rekey old.enc                      # same password, current format, atomic in place
 ./casemate rekey -change-password a.enc       # prompts for the current and the new password
 ./casemate rekey -new-password-file new.pw a.enc
-./casemate rekey -new-keyfile seal.key a.enc  # add or replace the key file
+./casemate rekey -new-keyfile casemate.key a.enc  # add or replace the key file
 ./casemate rekey -no-keyfile a.enc            # remove the key file requirement
 ./casemate rekey -out b.enc a.enc             # write elsewhere, keep the original
 ```
