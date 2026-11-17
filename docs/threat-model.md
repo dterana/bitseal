@@ -43,7 +43,33 @@ outside the chosen output path, or release unauthenticated plaintext. Decrypted
 data goes to a temporary file that is renamed into place only after the last
 chunk authenticated; to stdout it is held back until then.
 
-### 3. Someone who can observe the machine while Casemate runs
+### 3. Someone who hands you a directory archive
+
+`casemate decrypt -extract` unpacks an encrypted tar stream into a new
+directory. Only someone who holds the password can make a file that
+authenticates, so this attacker is a person who shares a password with you, or
+a file you decrypted without knowing who made it. The extractor assumes the
+archive is hostile:
+
+- **Paths:** absolute paths and `..` components are refused, so nothing is
+  written outside the destination.
+- **Entry types:** only regular files and directories are unpacked. Symlinks,
+  hard links, devices and FIFOs are refused, so an entry cannot redirect a later
+  write.
+- **Collisions:** duplicate names and a file placed over a directory are errors,
+  never overwrites. The destination must not exist, so nothing is merged into an
+  existing tree.
+- **Permissions:** only the permission bits are applied. Setuid, setgid and
+  sticky bits are dropped, and the extracted root is mode 0700.
+- **Partial results:** entries go into a hidden staging directory that is
+  renamed into place after the last chunk authenticated, and removed on any
+  failure or Ctrl+C.
+
+Archiving applies the same rules in reverse. A symlink or special file in the
+directory fails with its name instead of being dropped or followed, and the
+output may not sit inside the directory being archived.
+
+### 4. Someone who can observe the machine while Casemate runs
 
 Only partially covered. See "Not protected" below.
 
@@ -60,6 +86,13 @@ Encryption does not hide everything. Someone holding the file can see:
   plus `.enc`. Rename files if the name is sensitive.
 - **Timestamps and permissions of the file on disk**, which belong to the
   filesystem, not to Casemate.
+- **That a directory was archived, and how big it was.** A directory becomes
+  `<dir>.tar.enc`, so the directory name is visible in the default file name,
+  and the size is the tar size (rounded up to 512-byte blocks) plus the usual
+  overhead. File names, the layout, modes and modification times are inside the
+  encrypted tar and are not visible. The number of files is not stored in the
+  clear, but a large archive of small files cannot be told apart from a small
+  archive of large ones by size alone.
 
 ## Not protected
 
@@ -70,7 +103,15 @@ Encryption does not hide everything. Someone holding the file can see:
   Casemate zeroes its own buffers, but Go and the terminal layer may keep other
   copies, and memory is not locked against swapping.
 - **Plaintext left behind.** Casemate never deletes the original file after
-  encrypting. Decrypted output and any copies are your responsibility.
+  encrypting. Decrypted output and any copies are your responsibility. This
+  includes the original directory after `encrypt <dir>`.
+- **What an extracted archive contains.** Authentication proves the archive was
+  made by someone with the password, not that its files are safe. Extraction
+  never runs anything, but treat the result like any download, and do not run
+  scripts from an archive you do not trust.
+- **Ownership and special files in directories.** Archives drop owner and group,
+  extended attributes, links and devices on purpose. A directory that depends on
+  them is refused or restored without them.
 - **Who wrote the file.** GCM proves the file was produced by someone holding
   the password, not by a specific person. Use signatures if you need authorship.
 - **Freshness.** An attacker who has an older valid encrypted file can put it
@@ -99,6 +140,8 @@ Encryption does not hide everything. Someone holding the file can see:
 | Nonce encodes chunk index and "last" | Reordering, dropping and truncation fail |
 | Temp file plus rename, stdout held back | No unauthenticated plaintext reaches a file or pipe |
 | Refuse unknown versions and flags | A reader never guesses |
+| Directories are a tar stream in an ordinary file | No new format, and any version can read the result |
+| Extract only regular files and directories, into a staging directory | A hostile archive cannot escape, link out or leave partial output |
 | No Casemate-specific secret storage | The password comes from you; use your secret store |
 
 ## Reporting a problem
