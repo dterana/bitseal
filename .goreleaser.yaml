@@ -19,6 +19,17 @@ archives:
       - LICENSE
       - README.md
 
+# .deb and .rpm packages for Linux. macOS keeps using Homebrew.
+nfpms:
+  - id: packages
+    package_name: casemate
+    homepage: https://github.com/dterana/casemate
+    maintainer: David Terana <david@terana.io>
+    description: Password-based file encryption (AES-256-GCM, Argon2id)
+    license: MIT
+    formats: [deb, rpm]
+    bindir: /usr/bin
+
 checksum:
   name_template: checksums.txt
 
