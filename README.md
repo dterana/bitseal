@@ -136,6 +136,16 @@ Releases published after v0.3.0 also carry signed build provenance and one SBOM 
 gh attestation verify casemate_<version>_<os>_<arch>.tar.gz --repo dterana/casemate
 ```
 
+### Debian, Ubuntu, Fedora (`.deb` and `.rpm`)
+Releases after v0.4.0 also include `.deb` and `.rpm` packages for amd64 and arm64. They install the `casemate` binary into `/usr/bin`. Check them against `checksums.txt` like the archives, then:
+
+```bash
+sudo dpkg -i casemate_<version>_linux_amd64.deb      # Debian, Ubuntu
+sudo rpm -i casemate_<version>_linux_amd64.rpm       # Fedora, RHEL
+```
+
+The packages are not published in a package repository, so upgrades are manual.
+
 ### From source
 Building requires Go 1.26 or newer (set by the `golang.org/x/crypto` dependency).
 ```bash
