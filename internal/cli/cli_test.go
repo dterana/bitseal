@@ -199,7 +199,7 @@ func TestCLIInputValidation(t *testing.T) {
 		"decrypt no file":     {[]string{"decrypt", "-password-file", pf}, "no input file given"},
 		"decrypt missing":     {[]string{"decrypt", "-password-file", pf, filepath.Join(dir, "nope")}, "failed to read file"},
 		"decrypt needs -out":  {[]string{"decrypt", "-password-file", pf, a}, "use -out"},
-		"directory":           {[]string{"encrypt", "-password-file", pf, dir}, "is a directory"},
+		"decrypt directory":   {[]string{"decrypt", "-password-file", pf, "-out", filepath.Join(dir, "x"), dir}, "is a directory"},
 		"both password flags": {[]string{"encrypt", "-password-file", pf, "-password-env", "X", a}, "only one of"},
 	}
 	for name, tc := range cases {
@@ -786,4 +786,93 @@ func TestCLIRekeyMissingNewKeyFileWhileChangingPassword(t *testing.T) {
 	if !bytes.Equal(readFile(t, f), orig) {
 		t.Fatal("file modified")
 	}
+}
+
+// ----------------------------------------------------------------------------
+// directories
+// ----------------------------------------------------------------------------
+
+func TestCLIEncryptDirectoryAndExtract(t *testing.T) {
+	dir := t.TempDir()
+	pf := pwFile(t, dir, "a long enough passphrase")
+	src := filepath.Join(dir, "project")
+	if err := os.MkdirAll(filepath.Join(src, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plainFile(t, src, "a.txt", "alpha")
+	plainFile(t, filepath.Join(src, "sub"), "b.txt", "beta")
+
+	r := mustCLI(t, "", "encrypt", "-password-file", pf, src)
+	if !strings.Contains(r.err, src+".tar.enc") {
+		t.Fatalf("output name not reported: %q", r.err)
+	}
+	if err := os.RemoveAll(src); err != nil {
+		t.Fatal(err)
+	}
+
+	r = mustCLI(t, "", "decrypt", "-extract", "-password-file", pf, src+".tar.enc")
+	if !strings.Contains(r.err, "Extracted") {
+		t.Fatalf("extraction not reported: %q", r.err)
+	}
+	if string(readFile(t, filepath.Join(src, "sub", "b.txt"))) != "beta" {
+		t.Fatal("content differs")
+	}
+
+	// a second run must not overwrite what is there now
+	r = cli(t, "", "decrypt", "-extract", "-password-file", pf, src+".tar.enc")
+	if r.code != 1 || !strings.Contains(r.err, "already exists") {
+		t.Fatalf("%+v", r)
+	}
+	noTempLeftovers(t, dir)
+}
+
+func TestCLIExtractOutNamesTheDirectory(t *testing.T) {
+	dir := t.TempDir()
+	pf := pwFile(t, dir, "a long enough passphrase")
+	src := filepath.Join(dir, "project")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plainFile(t, src, "a.txt", "alpha")
+	mustCLI(t, "", "encrypt", "-password-file", pf, "-out", filepath.Join(dir, "backup.bin"), src)
+
+	dest := filepath.Join(dir, "restored")
+	mustCLI(t, "", "decrypt", "-extract", "-password-file", pf, "-out", dest, filepath.Join(dir, "backup.bin"))
+	if string(readFile(t, filepath.Join(dest, "a.txt"))) != "alpha" {
+		t.Fatal("content differs")
+	}
+}
+
+func TestCLIExtractNeedsAnArchiveNameOrOut(t *testing.T) {
+	dir := t.TempDir()
+	pf := pwFile(t, dir, "a long enough passphrase")
+	f := plainFile(t, dir, "x.enc", "whatever")
+	r := cli(t, "", "decrypt", "-extract", "-password-file", pf, f)
+	if r.code != 1 || !strings.Contains(r.err, "does not end in .tar.enc") {
+		t.Fatalf("%+v", r)
+	}
+}
+
+func TestCLIExtractWrongPasswordLeavesNothing(t *testing.T) {
+	dir := t.TempDir()
+	good := pwFile(t, dir, "a long enough passphrase")
+	bad := pwFile(t, dir, "another long passphrase")
+	src := filepath.Join(dir, "project")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plainFile(t, src, "a.txt", "alpha")
+	mustCLI(t, "", "encrypt", "-password-file", good, src)
+	if err := os.RemoveAll(src); err != nil {
+		t.Fatal(err)
+	}
+
+	r := cli(t, "", "decrypt", "-extract", "-password-file", bad, src+".tar.enc")
+	if r.code != 1 || !strings.Contains(r.err, "Extraction error") || !strings.Contains(r.err, "decryption failed") {
+		t.Fatalf("%+v", r)
+	}
+	if _, err := os.Stat(src); err == nil {
+		t.Fatal("a failed extraction left the destination behind")
+	}
+	noTempLeftovers(t, dir)
 }

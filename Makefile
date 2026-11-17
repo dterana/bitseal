@@ -37,7 +37,7 @@ cover:
 	@rm -f cover.out
 
 FUZZTIME ?= 20s
-FUZZ_TARGETS := FuzzDecryptV2 FuzzDecryptV1 FuzzParseHeaderV2 FuzzInspect FuzzRoundTripV2
+FUZZ_TARGETS := FuzzDecryptV2 FuzzDecryptV1 FuzzParseHeaderV2 FuzzInspect FuzzRoundTripV2 FuzzExtractTar
 
 # The Go fuzzer can end a run with "context deadline exceeded" when the time
 # budget expires mid-execution. Retrying once absorbs that flake; a real
