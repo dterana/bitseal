@@ -18,6 +18,8 @@ One static binary, nothing to set up, and a versioned format so old files keep d
 [![Format](https://img.shields.io/badge/file%20format-v2%20%E2%80%A2%20reads%20v1-informational)](#file-format)
 [![Streaming](https://img.shields.io/badge/streaming-bounded%20memory-informational)](#security-features)
 [![Homebrew](https://img.shields.io/badge/homebrew-dterana%2Ftap-FBB040?logo=homebrew&logoColor=white)](https://github.com/dterana/homebrew-tap)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/dterana/casemate/badge)](https://scorecard.dev/viewer/?uri=github.com/dterana/casemate)
+[![CodeQL](https://github.com/dterana/casemate/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/dterana/casemate/actions/workflows/codeql.yml)
 [![Dependencies](https://img.shields.io/badge/direct%20dependencies-2-brightgreen)](go.mod)
 [![Tests](https://img.shields.io/badge/tests-unit%20%7C%20CLI%20%7C%20e2e%20%7C%20fuzz-brightgreen)](#development)
 
