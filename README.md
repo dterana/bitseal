@@ -200,6 +200,7 @@ Put flags before the file names. Exit codes: `0` success, `1` an operation faile
 | `-password-env <name>` | encrypt, decrypt, rekey | Read the password from an environment variable |
 | `-password-fd <n>` | encrypt, decrypt, rekey | Read the password from a file descriptor (3 or higher) |
 | `-keyfile <path>` | encrypt, decrypt, rekey | Use a key file as a second factor |
+| `-strict` | encrypt, decrypt, rekey | Turn the password warnings into errors: refuse a password file that other users can read and a new password under 12 characters |
 | `-extract` | decrypt | Unpack a directory archive into a new directory (`-out` names it) |
 | `-change-password` | rekey | Prompt for a new password |
 | `-new-password-file <path>` | rekey | Read the new password from a file |
@@ -256,9 +257,9 @@ CASEMATE_PASSWORD=... ./casemate decrypt -password-env CASEMATE_PASSWORD config.
 ./casemate decrypt -password-fd 3 -out - config.yml.enc 3< <(pass show casemate)   # from a secret manager, never on disk
 ```
 
-Spaces inside a password are kept (`correct horse battery staple` works); surrounding whitespace and the line ending are trimmed. A password file that other users can read produces a warning. Prefer `-password-file`, `-password-env` or `-password-fd` over `echo`, which exposes the password in shell history and process listings. `-password-fd` keeps the password out of the environment and off the disk; Casemate closes only its own copy of the descriptor.
+Spaces inside a password are kept (`correct horse battery staple` works); surrounding whitespace and the line ending are trimmed. A password file that other users can read produces a warning, and a new password under 12 characters does too. Add `-strict` (in scripts and CI) to turn both warnings into errors. Prefer `-password-file`, `-password-env` or `-password-fd` over `echo`, which exposes the password in shell history and process listings. `-password-fd` keeps the password out of the environment and off the disk; Casemate closes only its own copy of the descriptor.
 
-When you set a new password (`encrypt`, or `rekey` with a new password), Casemate warns if it has fewer than 12 characters. The password is still accepted; the warning is advice.
+When you set a new password (`encrypt`, or `rekey` with a new password), Casemate warns if it has fewer than 12 characters. The password is still accepted; the warning is advice, unless you pass `-strict`, which refuses it.
 
 ### Key file (second factor)
 ```bash

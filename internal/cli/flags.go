@@ -73,6 +73,7 @@ type secretFlags struct {
 	passwordEnv  string
 	passwordFD   int
 	keyFile      string
+	strict       bool
 }
 
 // noFD is the default of the -password-fd flags: no descriptor given.
@@ -83,6 +84,7 @@ func (f *secretFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&f.passwordEnv, "password-env", "", "read the password from this environment variable")
 	fs.IntVar(&f.passwordFD, "password-fd", noFD, "read the password from the first line of this file descriptor")
 	fs.StringVar(&f.keyFile, "keyfile", "", "use this key file as a second factor")
+	fs.BoolVar(&f.strict, "strict", false, "refuse a password file others can read and a new password under 12 characters")
 }
 
 func (a *App) readPassword(f secretFlags, prompt string, confirm, stdinBusy bool) ([]byte, error) {
@@ -91,7 +93,7 @@ func (a *App) readPassword(f secretFlags, prompt string, confirm, stdinBusy bool
 	}
 	switch {
 	case f.passwordFile != "":
-		return a.readPasswordFile(f.passwordFile)
+		return a.readPasswordFile(f.passwordFile, f.strict)
 	case f.passwordEnv != "":
 		return readPasswordEnv(f.passwordEnv)
 	case f.passwordFD != noFD:
@@ -110,7 +112,10 @@ func (a *App) resolveSecret(f secretFlags, prompt string, confirm, stdinBusy boo
 		return seal.Secret{}, err
 	}
 	if confirm {
-		a.warnIfShort(pw)
+		if err := a.checkLength(pw, f.strict); err != nil {
+			seal.Wipe(pw)
+			return seal.Secret{}, err
+		}
 	}
 	secret := seal.Secret{Password: pw}
 	if f.keyFile != "" {
@@ -148,7 +153,7 @@ func (r rekeyFlags) changesPassword() bool {
 	return r.changePassword || r.newPasswordFile != "" || r.newPasswordEnv != "" || r.newPasswordFD != noFD
 }
 
-func (a *App) newSecret(r rekeyFlags, old seal.Secret) (seal.Secret, error) {
+func (a *App) newSecret(r rekeyFlags, old seal.Secret, strict bool) (seal.Secret, error) {
 	if countSet(r.newPasswordFile != "", r.newPasswordEnv != "", r.newPasswordFD != noFD) > 1 {
 		return seal.Secret{}, fmt.Errorf("use only one of -new-password-file, -new-password-env and -new-password-fd")
 	}
@@ -160,7 +165,7 @@ func (a *App) newSecret(r rekeyFlags, old seal.Secret) (seal.Secret, error) {
 	var err error
 	switch {
 	case r.newPasswordFile != "":
-		next.Password, err = a.readPasswordFile(r.newPasswordFile)
+		next.Password, err = a.readPasswordFile(r.newPasswordFile, strict)
 	case r.newPasswordEnv != "":
 		next.Password, err = readPasswordEnv(r.newPasswordEnv)
 	case r.newPasswordFD != noFD:
@@ -173,7 +178,10 @@ func (a *App) newSecret(r rekeyFlags, old seal.Secret) (seal.Secret, error) {
 	}
 
 	if r.changesPassword() {
-		a.warnIfShort(next.Password)
+		if err := a.checkLength(next.Password, strict); err != nil {
+			seal.Wipe(next.Password)
+			return seal.Secret{}, err
+		}
 	}
 
 	switch {

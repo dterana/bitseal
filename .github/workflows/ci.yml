@@ -13,6 +13,7 @@ jobs:
   # stay present and green for site and docs-only changes; they just skip their steps.
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       code: ${{ steps.diff.outputs.code }}
     steps:
@@ -44,6 +45,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         if: needs.changes.outputs.code == 'true'
@@ -67,6 +69,7 @@ jobs:
   lint:
     needs: changes
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         if: needs.changes.outputs.code == 'true'
@@ -82,6 +85,7 @@ jobs:
   fuzz:
     needs: changes
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         if: needs.changes.outputs.code == 'true'
@@ -96,6 +100,7 @@ jobs:
   vulncheck:
     needs: changes
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         if: needs.changes.outputs.code == 'true'

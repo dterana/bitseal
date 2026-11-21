@@ -202,7 +202,7 @@ func TestReadPasswordFile(t *testing.T) {
 			if err := os.WriteFile(path, []byte(tc.content), 0600); err != nil {
 				t.Fatal(err)
 			}
-			got, err := std.readPasswordFile(path)
+			got, err := std.readPasswordFile(path, false)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got %q", got)
@@ -218,7 +218,7 @@ func TestReadPasswordFile(t *testing.T) {
 
 func TestReadPasswordFileMissing(t *testing.T) {
 	std := captureStdio(t, "")
-	if _, err := std.readPasswordFile(filepath.Join(t.TempDir(), "nope")); err == nil || !strings.Contains(err.Error(), "password file") {
+	if _, err := std.readPasswordFile(filepath.Join(t.TempDir(), "nope"), false); err == nil || !strings.Contains(err.Error(), "password file") {
 		t.Fatalf("unexpected: %v", err)
 	}
 }
@@ -235,13 +235,13 @@ func TestReadPasswordFilePermissionWarning(t *testing.T) {
 	os.Chmod(loose, 0644)
 
 	std := captureStdio(t, "")
-	if _, err := std.readPasswordFile(tight); err != nil {
+	if _, err := std.readPasswordFile(tight, false); err != nil {
 		t.Fatal(err)
 	}
 	if std.err.Len() != 0 {
 		t.Fatalf("0600 file must not warn: %q", std.err.String())
 	}
-	if pw, err := std.readPasswordFile(loose); err != nil || string(pw) != "pw" {
+	if pw, err := std.readPasswordFile(loose, false); err != nil || string(pw) != "pw" {
 		t.Fatalf("a loose file still works: %q, %v", pw, err)
 	}
 	if !strings.Contains(std.err.String(), "accessible by other users") {
