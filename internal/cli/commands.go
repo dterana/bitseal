@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/dterana/casemate/internal/seal"
@@ -108,6 +110,17 @@ func (a *App) cmdRekey(args []string) error {
 	if containsStdin(files) {
 		return fmt.Errorf("rekey works on files only, not stdin")
 	}
+	if rk.recursive {
+		if in.out != "" {
+			return fmt.Errorf("-out cannot be used with -recursive")
+		}
+		if files, err = expandEncrypted(files); err != nil {
+			return err
+		}
+	}
+	if rk.dryRun {
+		return a.rekeyDryRun(files, in.out)
+	}
 
 	prompt := "Enter password: "
 	if rk.changePassword {
@@ -140,6 +153,65 @@ func (a *App) cmdRekey(args []string) error {
 		fmt.Fprintf(a.Stderr, "✓ Re-encrypted %s -> %s\n", f, dest)
 	}
 	return a.summarize(failed, len(files))
+}
+
+// expandEncrypted replaces each directory with the .enc files below it, in
+// lexical order. Symlinks are never followed or listed, so a rekey cannot
+// reach outside the trees it was pointed at. Plain files pass through.
+func expandEncrypted(paths []string) ([]string, error) {
+	var files []string
+	for _, p := range paths {
+		st, err := os.Stat(p)
+		if err != nil {
+			return nil, err
+		}
+		if !st.IsDir() {
+			files = append(files, p)
+			continue
+		}
+		before := len(files)
+		err = filepath.WalkDir(p, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.Type().IsRegular() && strings.HasSuffix(path, ".enc") {
+				files = append(files, path)
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(files) == before {
+			return nil, fmt.Errorf("no .enc files found under %s", p)
+		}
+	}
+	return files, nil
+}
+
+// rekeyDryRun lists what a rekey would touch and the format each file has now.
+// It reads headers only, so it needs no password and writes nothing.
+func (a *App) rekeyDryRun(files []string, out string) error {
+	manager := a.manager()
+	failed := 0
+	for _, f := range files {
+		info, err := manager.InspectFile(f)
+		if err != nil {
+			a.reportFailure("Rekey error", f, err)
+			failed++
+			continue
+		}
+		dest := out
+		if dest == "" {
+			dest = f
+		}
+		fmt.Fprintf(a.Stderr, "Would re-encrypt %s -> %s (format v%d)\n", f, dest, info.Version)
+	}
+	if err := a.summarize(failed, len(files)); err != nil {
+		return err
+	}
+	fmt.Fprintf(a.Stderr, "Dry run: %d file(s) would be rekeyed, nothing was written\n", len(files))
+	return nil
 }
 
 func (a *App) cmdInfo(args []string) error {

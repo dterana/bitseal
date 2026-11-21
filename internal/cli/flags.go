@@ -138,6 +138,8 @@ type rekeyFlags struct {
 	newPasswordFD   int
 	newKeyFile      string
 	noKeyFile       bool
+	recursive       bool
+	dryRun          bool
 }
 
 func (r *rekeyFlags) register(fs *flag.FlagSet) {
@@ -147,6 +149,8 @@ func (r *rekeyFlags) register(fs *flag.FlagSet) {
 	fs.IntVar(&r.newPasswordFD, "new-password-fd", noFD, "read the new password from the first line of this file descriptor")
 	fs.StringVar(&r.newKeyFile, "new-keyfile", "", "set or replace the key file")
 	fs.BoolVar(&r.noKeyFile, "no-keyfile", false, "remove the key file requirement")
+	fs.BoolVar(&r.recursive, "recursive", false, "rekey every .enc file under the directories given (symlinks are skipped)")
+	fs.BoolVar(&r.dryRun, "dry-run", false, "list the files that would be rekeyed and their format, without a password and without writing")
 }
 
 func (r rekeyFlags) changesPassword() bool {

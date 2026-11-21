@@ -637,6 +637,94 @@ func TestCLIRekeyPartialFailure(t *testing.T) {
 	}
 }
 
+func TestCLIRekeyRecursive(t *testing.T) {
+	dir := t.TempDir()
+	pf := pwFile(t, dir, "pw")
+	tree := filepath.Join(dir, "tree")
+	if err := os.MkdirAll(filepath.Join(tree, "sub", "deep"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	a := filepath.Join(tree, "a.enc")
+	b := filepath.Join(tree, "sub", "deep", "b.enc")
+	skip := filepath.Join(tree, "notes.txt")
+	writeV1File(t, a, "A", "pw")
+	writeV1File(t, b, "B", "pw")
+	writeFile(t, skip, []byte("plain"))
+	outside := filepath.Join(dir, "outside.enc")
+	writeV1File(t, outside, "O", "pw")
+	if err := os.Symlink(outside, filepath.Join(tree, "link.enc")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	r := mustCLI(t, "", "rekey", "-recursive", "-password-file", pf, tree)
+	if !strings.Contains(r.err, "Re-encrypted "+a) || !strings.Contains(r.err, "Re-encrypted "+b) {
+		t.Fatalf("both files must be rekeyed:\n%s", r.err)
+	}
+	if readFile(t, a)[0] != 2 || readFile(t, b)[0] != 2 {
+		t.Fatal("files under the tree were not upgraded")
+	}
+	if string(readFile(t, skip)) != "plain" {
+		t.Fatal("a non .enc file was touched")
+	}
+	if readFile(t, outside)[0] != 1 {
+		t.Fatal("a symlink was followed out of the tree")
+	}
+}
+
+func TestCLIRekeyRecursiveErrors(t *testing.T) {
+	dir := t.TempDir()
+	pf := pwFile(t, dir, "pw")
+	empty := filepath.Join(dir, "empty")
+	if err := os.Mkdir(empty, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f := filepath.Join(dir, "a.enc")
+	writeV1File(t, f, "A", "pw")
+
+	if r := cli(t, "", "rekey", "-recursive", "-password-file", pf, empty); r.code != 1 || !strings.Contains(r.err, "no .enc files found") {
+		t.Fatalf("%+v", r)
+	}
+	if r := cli(t, "", "rekey", "-recursive", "-out", "x", "-password-file", pf, dir); r.code != 1 || !strings.Contains(r.err, "-out cannot be used") {
+		t.Fatalf("%+v", r)
+	}
+	// without -recursive a directory is not expanded
+	if r := cli(t, "", "rekey", "-password-file", pf, dir); r.code != 1 {
+		t.Fatalf("%+v", r)
+	}
+}
+
+func TestCLIRekeyDryRun(t *testing.T) {
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "a.enc"), filepath.Join(dir, "b.enc")
+	writeV1File(t, a, "A", "pw")
+	writeFile(t, b, mustHex(t, testvectors.V2Hex))
+	origA, origB := readFile(t, a), readFile(t, b)
+
+	// no password is given and none is prompted for: a dry run reads headers only
+	r := mustCLI(t, "", "rekey", "-recursive", "-dry-run", dir)
+	for _, want := range []string{"Would re-encrypt " + a, "format v1", "Would re-encrypt " + b, "format v2", "2 file(s) would be rekeyed"} {
+		if !strings.Contains(r.err, want) {
+			t.Fatalf("dry run lacks %q:\n%s", want, r.err)
+		}
+	}
+	if !bytes.Equal(readFile(t, a), origA) || !bytes.Equal(readFile(t, b), origB) {
+		t.Fatal("a dry run modified a file")
+	}
+	noTempLeftovers(t, dir)
+}
+
+func TestCLIRekeyDryRunReportsUnreadableFiles(t *testing.T) {
+	dir := t.TempDir()
+	good, bad := filepath.Join(dir, "good.enc"), filepath.Join(dir, "bad.enc")
+	writeV1File(t, good, "A", "pw")
+	writeFile(t, bad, []byte("not a casemate file"))
+
+	r := cli(t, "", "rekey", "-dry-run", good, bad)
+	if r.code != 1 || !strings.Contains(r.err, "1 of 2 files failed") || strings.Contains(r.err, "nothing was written") {
+		t.Fatalf("%+v", r)
+	}
+}
+
 // ----------------------------------------------------------------------------
 // info
 // ----------------------------------------------------------------------------
