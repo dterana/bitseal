@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag to test, for example v0.6.1
+        description: Release tag to test, for example v0.7.0
         required: true
 
 permissions:
@@ -63,7 +63,7 @@ jobs:
         run: |
           mkdir src && echo "smoke test payload" > src/a.txt
           printf 'a smoke test passphrase\n' > pw && chmod 600 pw
-          ./casemate encrypt -password-file pw src
+          ./casemate encrypt -strict -password-file pw src
           rm -r src
-          ./casemate decrypt -password-file pw -extract src.tar.enc
+          ./casemate decrypt -strict -password-file pw -extract src.tar.enc
           test "$(cat src/a.txt)" = "smoke test payload"
