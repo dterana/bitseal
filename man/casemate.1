@@ -1,0 +1,80 @@
+.TH CASEMATE 1 "" "casemate" "User Commands"
+.SH NAME
+casemate \- password-based file encryption (AES-256-GCM, Argon2id)
+.SH SYNOPSIS
+.B casemate
+.I command
+.RI [ flags ]
+.RI [ file... ]
+.SH DESCRIPTION
+.B casemate
+encrypts and decrypts files with a password, optionally combined with a key file.
+Directories are packed into a tar archive first.
+Data goes to standard output; prompts, progress and errors go to standard error.
+.SH COMMANDS
+.TP
+.B encrypt
+Encrypt files, writing
+.IR file .enc,
+or directories, writing
+.IR dir .tar.enc.
+.TP
+.B decrypt
+Decrypt files, stripping
+.BR .enc .
+With
+.BR \-extract ,
+unpack a directory archive into a new directory.
+.TP
+.B rekey
+Re-encrypt files in place with the current format, optionally with a new password or key file.
+With
+.B \-recursive
+a directory argument is searched for encrypted files;
+.B \-dry\-run
+lists what would be rekeyed without writing.
+.TP
+.B info
+Show a file's format without decrypting it. With
+.B \-json
+print one JSON object per file.
+.TP
+.B keygen
+Create a random key file with
+.BR "\-out " \fIpath\fR.
+.TP
+.B version
+Show version information.
+.SH COMMON FLAGS
+.TP
+.BI \-file " path"
+Input file, repeatable; \- reads standard input.
+.TP
+.BI \-out " path"
+Output file (single input only); \- writes standard output.
+.TP
+.BI \-password\-file " path"
+Read the password from the first line of a file.
+.TP
+.BI \-password\-env " name"
+Read the password from an environment variable.
+.TP
+.BI \-password\-fd " n"
+Read the password from a file descriptor (3 or higher).
+.TP
+.BI \-keyfile " path"
+Use a key file as a second factor.
+.TP
+.B \-strict
+Refuse a password file others can read and a new password under 12 characters.
+.SH EXIT STATUS
+0 on success, 1 if an operation failed, 2 for invalid flags.
+.SH EXAMPLES
+.nf
+casemate encrypt notes.txt
+casemate decrypt notes.txt.enc
+tar -czf \- project | casemate encrypt \-file \- \-out project.tgz.enc
+casemate rekey \-recursive \-dry\-run ~/vault
+.fi
+.SH SEE ALSO
+https://github.com/dterana/casemate
