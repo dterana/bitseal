@@ -37,10 +37,6 @@ checksum:
 sboms:
   - artifacts: archive
 
-release:
-  # Releases stay pre-releases until 1.0; remove this line then.
-  prerelease: true
-
 changelog:
   sort: asc
   filters:
