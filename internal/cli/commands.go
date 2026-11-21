@@ -2,6 +2,7 @@ package cli
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -144,7 +145,9 @@ func (a *App) cmdRekey(args []string) error {
 func (a *App) cmdInfo(args []string) error {
 	fs := a.newFlagSet("info")
 	var in fileArgs
+	var asJSON bool
 	in.register(fs, false)
+	fs.BoolVar(&asJSON, "json", false, "print one JSON object per file instead of text")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -162,12 +165,47 @@ func (a *App) cmdInfo(args []string) error {
 			failed++
 			continue
 		}
+		if asJSON {
+			line, err := formatInfoJSON(f, info)
+			if err != nil {
+				a.reportFailure("Info error", f, err)
+				failed++
+				continue
+			}
+			fmt.Fprintln(a.Stdout, line)
+			continue
+		}
 		if i > 0 {
 			fmt.Fprintln(a.Stdout)
 		}
 		fmt.Fprint(a.Stdout, formatInfo(f, info))
 	}
 	return a.summarize(failed, len(files))
+}
+
+// infoJSON is the machine-readable form of `casemate info`. Field names are
+// part of the CLI contract: add fields, never rename them.
+type infoJSON struct {
+	File      string `json:"file"`
+	Version   int    `json:"version"`
+	Cipher    string `json:"cipher"`
+	KDF       string `json:"kdf"`
+	KeyFile   bool   `json:"key_file"`
+	ChunkSize int    `json:"chunk_size"`
+	Legacy    bool   `json:"legacy"`
+}
+
+func formatInfoJSON(name string, info seal.FileInfo) (string, error) {
+	b, err := json.Marshal(infoJSON{
+		File:      inLabel(name),
+		Version:   int(info.Version),
+		Cipher:    info.Cipher,
+		KDF:       info.KDF,
+		KeyFile:   info.KeyFile,
+		ChunkSize: info.ChunkSize,
+		Legacy:    info.Legacy,
+	})
+	return string(b), err
 }
 
 func formatInfo(name string, info seal.FileInfo) string {

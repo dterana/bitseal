@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -683,6 +684,50 @@ func TestCLIInfoSmallChunksAndKeyFile(t *testing.T) {
 	writeFile(t, f, mustHex(t, testvectors.V2KeyFileHex))
 	if r := mustCLI(t, "", "info", f); !strings.Contains(r.out, "Key file:  required") {
 		t.Fatalf("%s", r.out)
+	}
+}
+
+func TestCLIInfoJSON(t *testing.T) {
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "a.enc"), filepath.Join(dir, "b.enc")
+	writeFile(t, a, mustHex(t, testvectors.V1Hex))
+	writeFile(t, b, mustHex(t, testvectors.V2KeyFileHex))
+
+	r := mustCLI(t, "", "info", "-json", a, b)
+	lines := strings.Split(strings.TrimSpace(r.out), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("want one JSON line per file, got:\n%s", r.out)
+	}
+	var legacy, current infoJSON
+	if err := json.Unmarshal([]byte(lines[0]), &legacy); err != nil {
+		t.Fatalf("%v: %s", err, lines[0])
+	}
+	if err := json.Unmarshal([]byte(lines[1]), &current); err != nil {
+		t.Fatalf("%v: %s", err, lines[1])
+	}
+	if legacy.File != a || legacy.Version != 1 || !legacy.Legacy || legacy.KeyFile || legacy.ChunkSize != 0 {
+		t.Fatalf("unexpected legacy info: %+v", legacy)
+	}
+	if current.File != b || current.Version != 2 || current.Legacy || !current.KeyFile || current.ChunkSize != 64 {
+		t.Fatalf("unexpected current info: %+v", current)
+	}
+	if r.err != "" {
+		t.Fatalf("successful info must not write to stderr: %q", r.err)
+	}
+}
+
+func TestCLIInfoJSONErrorsGoToStderr(t *testing.T) {
+	dir := t.TempDir()
+	good, bad := filepath.Join(dir, "good.enc"), filepath.Join(dir, "bad.enc")
+	writeFile(t, good, mustHex(t, testvectors.V2Hex))
+	writeFile(t, bad, []byte("not a casemate file"))
+
+	r := cli(t, "", "info", "-json", good, bad)
+	if r.code != 1 || !strings.Contains(r.err, "Info error") {
+		t.Fatalf("code=%d err=%q", r.code, r.err)
+	}
+	if strings.Count(r.out, "\n") != 1 || !json.Valid([]byte(strings.TrimSpace(r.out))) {
+		t.Fatalf("stdout must hold only the valid JSON line:\n%s", r.out)
 	}
 }
 
