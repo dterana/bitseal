@@ -95,7 +95,8 @@ func cleanPassword(b []byte) ([]byte, error) {
 }
 
 // readPasswordFile reads the first line of a file as the password.
-func (a *App) readPasswordFile(path string) ([]byte, error) {
+// With strict, a file that other users can read is an error, not a warning.
+func (a *App) readPasswordFile(path string, strict bool) ([]byte, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read password file: %w", err)
@@ -103,6 +104,9 @@ func (a *App) readPasswordFile(path string) ([]byte, error) {
 	defer seal.Wipe(data)
 
 	if fi, err := os.Stat(path); err == nil && runtime.GOOS != "windows" && fi.Mode().Perm()&0077 != 0 {
+		if strict {
+			return nil, fmt.Errorf("password file %s is accessible by other users (-strict); run chmod 600 on it", path)
+		}
 		fmt.Fprintf(a.Stderr, "Warning: password file %s is accessible by other users (chmod 600 recommended)\n", path)
 	}
 
@@ -138,16 +142,22 @@ func readKeyFile(path string) ([]byte, error) {
 	return data, nil
 }
 
-// minPasswordLength is the length below which Casemate warns. It is advice,
-// not a rule: the password is still accepted.
+// minPasswordLength is the length below which Casemate warns, or refuses
+// with -strict. Without -strict it is advice, not a rule.
 const minPasswordLength = 12
 
-// warnIfShort tells the user a new password is short. Argon2id slows guessing
-// but cannot save a guessable password.
-func (a *App) warnIfShort(pw []byte) {
-	if n := utf8.RuneCount(pw); n < minPasswordLength {
-		fmt.Fprintf(a.Stderr, "Warning: the password has only %d characters; use a passphrase of %d or more, or add -keyfile\n", n, minPasswordLength)
+// checkLength tells the user a new password is short. Argon2id slows guessing
+// but cannot save a guessable password. With strict, a short password is an error.
+func (a *App) checkLength(pw []byte, strict bool) error {
+	n := utf8.RuneCount(pw)
+	if n >= minPasswordLength {
+		return nil
 	}
+	if strict {
+		return fmt.Errorf("the password has only %d characters and -strict requires %d or more; use a longer passphrase or add -keyfile", n, minPasswordLength)
+	}
+	fmt.Fprintf(a.Stderr, "Warning: the password has only %d characters; use a passphrase of %d or more, or add -keyfile\n", n, minPasswordLength)
+	return nil
 }
 
 // readPasswordFD reads the first line of an inherited file descriptor as the

@@ -118,7 +118,7 @@ func (a *App) cmdRekey(args []string) error {
 	}
 	defer old.Wipe()
 
-	next, err := a.newSecret(rk, old)
+	next, err := a.newSecret(rk, old, sf.strict)
 	if err != nil {
 		return err
 	}

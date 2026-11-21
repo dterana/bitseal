@@ -90,6 +90,8 @@ Common flags (put them before the file names):
   -password-env <name>    Read the password from an environment variable
   -password-fd <n>        Read the password from a file descriptor (3 or higher)
   -keyfile <path>         Use a key file as a second factor
+  -strict                 Refuse a password file others can read and a new
+                          password under 12 characters (warnings become errors)
 
 Run 'casemate <command> -h' to list all flags of a command.
 `

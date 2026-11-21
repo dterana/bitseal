@@ -97,7 +97,9 @@ Encryption does not hide everything. Someone holding the file can see:
 ## Not protected
 
 - **A weak or reused password.** This is the main risk. Use a long passphrase
-  and, ideally, a key file.
+  and, ideally, a key file. Casemate warns about a new password under 12
+  characters and about a password file other users can read; `-strict` turns
+  both warnings into errors, which suits scripts and CI.
 - **A compromised machine.** Malware, a keylogger, or anyone who can read the
   process memory, swap or a core dump can get the password or plaintext.
   Casemate zeroes its own buffers, but Go and the terminal layer may keep other

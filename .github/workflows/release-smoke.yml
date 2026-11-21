@@ -1,0 +1,69 @@
+name: Release smoke test
+
+# Downloads the published release the way a user would and checks it: checksum,
+# build attestation, version, and a folder round trip. Tokens created by the
+# Release workflow cannot trigger other workflows, so this listens for its end.
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to test, for example v0.6.1
+        required: true
+
+permissions:
+  contents: read
+  attestations: read
+
+jobs:
+  smoke:
+    # Manual snapshot runs of Release publish nothing, so only tag pushes count.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-latest, platform: linux_amd64}
+          - {os: ubuntu-24.04-arm, platform: linux_arm64}
+          - {os: macos-latest, platform: darwin_arm64}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag || github.event.workflow_run.head_branch }}
+    steps:
+      - name: Download the release
+        run: |
+          version="${TAG#v}"
+          mkdir dl && cd dl
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" \
+            -p "casemate_${version}_${{ matrix.platform }}.tar.gz" -p checksums.txt
+          ls -l
+      - name: Verify the checksum
+        working-directory: dl
+        run: |
+          grep " casemate_.*_${{ matrix.platform }}.tar.gz$" checksums.txt > one.txt
+          test -s one.txt
+          if command -v sha256sum >/dev/null; then sha256sum -c one.txt; else shasum -a 256 -c one.txt; fi
+      - name: Verify the build attestation
+        working-directory: dl
+        run: gh attestation verify casemate_*_${{ matrix.platform }}.tar.gz -R "$GITHUB_REPOSITORY"
+      - name: Check the version matches the tag
+        working-directory: dl
+        run: |
+          tar -xzf casemate_*_${{ matrix.platform }}.tar.gz
+          ./casemate version | tee version.txt
+          grep -q "Casemate ${TAG}" version.txt
+      - name: Encrypt and extract a folder
+        working-directory: dl
+        run: |
+          mkdir src && echo "smoke test payload" > src/a.txt
+          printf 'a smoke test passphrase\n' > pw && chmod 600 pw
+          ./casemate encrypt -password-file pw src
+          rm -r src
+          ./casemate decrypt -password-file pw -extract src.tar.enc
+          test "$(cat src/a.txt)" = "smoke test payload"
