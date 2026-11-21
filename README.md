@@ -18,6 +18,8 @@ One static binary, nothing to set up, and a versioned format so old files keep d
 [![Format](https://img.shields.io/badge/file%20format-v2%20%E2%80%A2%20reads%20v1-informational)](#file-format)
 [![Streaming](https://img.shields.io/badge/streaming-bounded%20memory-informational)](#security-features)
 [![Homebrew](https://img.shields.io/badge/homebrew-dterana%2Ftap-FBB040?logo=homebrew&logoColor=white)](https://github.com/dterana/homebrew-tap)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/dterana/casemate/badge)](https://scorecard.dev/viewer/?uri=github.com/dterana/casemate)
+[![CodeQL](https://github.com/dterana/casemate/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/dterana/casemate/actions/workflows/codeql.yml)
 [![Dependencies](https://img.shields.io/badge/direct%20dependencies-2-brightgreen)](go.mod)
 [![Tests](https://img.shields.io/badge/tests-unit%20%7C%20CLI%20%7C%20e2e%20%7C%20fuzz-brightgreen)](#development)
 
@@ -135,8 +137,16 @@ The formula lives in [dterana/homebrew-tap](https://github.com/dterana/homebrew-
 ### From a release
 Download the archive for your platform from the [releases page](https://github.com/dterana/casemate/releases), [verify it](#verify-a-release), and put `casemate` on your `PATH`. Releases are marked as pre-releases until 1.0.
 
+### Shell completions and man page
+Releases after v0.7.0 include completions for bash, zsh and fish in `completions/` and a man page in `man/casemate.1`, both in the archives. Homebrew and the `.deb` and `.rpm` packages install them for you. From an archive, copy them where your shell and `man` look, for example:
+
+```bash
+install -m 644 man/casemate.1 /usr/local/share/man/man1/
+install -m 644 completions/casemate.bash /usr/local/share/bash-completion/completions/casemate
+```
+
 ### Debian, Ubuntu, Fedora (`.deb` and `.rpm`)
-Releases after v0.4.0 also include `.deb` and `.rpm` packages for amd64 and arm64. They install the `casemate` binary into `/usr/bin`. Check them against `checksums.txt` like the archives, then:
+Releases after v0.4.0 also include `.deb` and `.rpm` packages for amd64 and arm64. They install the `casemate` binary into `/usr/bin`, with the completions and the man page. Check them against `checksums.txt` like the archives, then:
 
 ```bash
 sudo dpkg -i casemate_<version>_linux_amd64.deb      # Debian, Ubuntu
@@ -184,7 +194,7 @@ You can also skip the binaries and build from source (see [From source](#from-so
 | `casemate encrypt [flags] [path...]` | Encrypt files (writes `<file>.enc`) or directories (writes `<dir>.tar.enc`) |
 | `casemate decrypt [flags] [file...]` | Decrypt files (strips `.enc`); with `-extract`, unpack a directory archive |
 | `casemate rekey [flags] [file...]` | Re-encrypt in place with the current format, optionally with a new password or key file |
-| `casemate info [file...]` | Show a file's format without decrypting it |
+| `casemate info [flags] [file...]` | Show a file's format without decrypting it (`-json` for scripts) |
 | `casemate keygen -out <path>` | Create a random key file for `-keyfile` |
 | `casemate version` | Show version information |
 
@@ -208,6 +218,9 @@ Put flags before the file names. Exit codes: `0` success, `1` an operation faile
 | `-new-password-fd <n>` | rekey | Read the new password from a file descriptor |
 | `-new-keyfile <path>` | rekey | Set or replace the key file |
 | `-no-keyfile` | rekey | Remove the key file requirement |
+| `-recursive` | rekey | Rekey every `.enc` file under the directories given. Symbolic links are skipped |
+| `-dry-run` | rekey | List the files that would be rekeyed and their format. Needs no password and writes nothing |
+| `-json` | info | Print one JSON object per file, one per line |
 
 ### Encrypt and decrypt
 ```bash
@@ -279,6 +292,7 @@ tar czf - ./project | ./casemate encrypt -password-file pw -file - -out project.
 ./casemate decrypt -password-file pw -file project.tar.gz.enc -out - | tar xzf -
 ```
 
+- For compression, excludes and restore tips, see [Using Casemate with tar](docs/tar-pipe.md).
 - With `-file -` the password cannot come from stdin; use `-password-file` or `-password-env`.
 - `encrypt` refuses to write binary output to a terminal.
 - `decrypt -out -` holds the plaintext back until the whole file has authenticated, so a corrupt file prints nothing. This buffers the plaintext in memory; for very large files decrypt to a file instead.
@@ -293,6 +307,10 @@ tar czf - ./project | ./casemate encrypt -password-file pw -file - -out project.
 ./casemate rekey -no-keyfile a.enc            # remove the key file requirement
 ./casemate rekey -out b.enc a.enc             # write elsewhere, keep the original
 ```
+```bash
+./casemate rekey -recursive -dry-run ~/vault  # list what would change, no password needed
+./casemate rekey -recursive ~/vault           # upgrade every .enc file under the folder
+```
 The plaintext is piped between decrypting and re-encrypting and never touches the disk. A failure leaves the original file untouched. A key file given with `-keyfile` is the current one; use `-new-keyfile` to change it.
 
 ### Inspect a file
@@ -305,6 +323,8 @@ KDF:       Argon2id (time=3, memory=64 MiB, threads=4), random per-file salt
 Key file:  not required
 ```
 `info` reads only the header and needs no password.
+
+With `-json` each file becomes one line of JSON with the fields `file`, `version`, `cipher`, `kdf`, `key_file`, `chunk_size` and `legacy`, for example `casemate info -json *.enc | jq -r 'select(.legacy) | .file'` lists the files that still need a `rekey`.
 
 ## How it works
 

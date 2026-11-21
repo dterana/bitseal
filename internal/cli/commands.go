@@ -2,9 +2,12 @@ package cli
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/dterana/casemate/internal/seal"
@@ -107,6 +110,17 @@ func (a *App) cmdRekey(args []string) error {
 	if containsStdin(files) {
 		return fmt.Errorf("rekey works on files only, not stdin")
 	}
+	if rk.recursive {
+		if in.out != "" {
+			return fmt.Errorf("-out cannot be used with -recursive")
+		}
+		if files, err = expandEncrypted(files); err != nil {
+			return err
+		}
+	}
+	if rk.dryRun {
+		return a.rekeyDryRun(files, in.out)
+	}
 
 	prompt := "Enter password: "
 	if rk.changePassword {
@@ -141,10 +155,71 @@ func (a *App) cmdRekey(args []string) error {
 	return a.summarize(failed, len(files))
 }
 
+// expandEncrypted replaces each directory with the .enc files below it, in
+// lexical order. Symlinks are never followed or listed, so a rekey cannot
+// reach outside the trees it was pointed at. Plain files pass through.
+func expandEncrypted(paths []string) ([]string, error) {
+	var files []string
+	for _, p := range paths {
+		st, err := os.Stat(p)
+		if err != nil {
+			return nil, err
+		}
+		if !st.IsDir() {
+			files = append(files, p)
+			continue
+		}
+		before := len(files)
+		err = filepath.WalkDir(p, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.Type().IsRegular() && strings.HasSuffix(path, ".enc") {
+				files = append(files, path)
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(files) == before {
+			return nil, fmt.Errorf("no .enc files found under %s", p)
+		}
+	}
+	return files, nil
+}
+
+// rekeyDryRun lists what a rekey would touch and the format each file has now.
+// It reads headers only, so it needs no password and writes nothing.
+func (a *App) rekeyDryRun(files []string, out string) error {
+	manager := a.manager()
+	failed := 0
+	for _, f := range files {
+		info, err := manager.InspectFile(f)
+		if err != nil {
+			a.reportFailure("Rekey error", f, err)
+			failed++
+			continue
+		}
+		dest := out
+		if dest == "" {
+			dest = f
+		}
+		fmt.Fprintf(a.Stderr, "Would re-encrypt %s -> %s (format v%d)\n", f, dest, info.Version)
+	}
+	if err := a.summarize(failed, len(files)); err != nil {
+		return err
+	}
+	fmt.Fprintf(a.Stderr, "Dry run: %d file(s) would be rekeyed, nothing was written\n", len(files))
+	return nil
+}
+
 func (a *App) cmdInfo(args []string) error {
 	fs := a.newFlagSet("info")
 	var in fileArgs
+	var asJSON bool
 	in.register(fs, false)
+	fs.BoolVar(&asJSON, "json", false, "print one JSON object per file instead of text")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -162,12 +237,47 @@ func (a *App) cmdInfo(args []string) error {
 			failed++
 			continue
 		}
+		if asJSON {
+			line, err := formatInfoJSON(f, info)
+			if err != nil {
+				a.reportFailure("Info error", f, err)
+				failed++
+				continue
+			}
+			fmt.Fprintln(a.Stdout, line)
+			continue
+		}
 		if i > 0 {
 			fmt.Fprintln(a.Stdout)
 		}
 		fmt.Fprint(a.Stdout, formatInfo(f, info))
 	}
 	return a.summarize(failed, len(files))
+}
+
+// infoJSON is the machine-readable form of `casemate info`. Field names are
+// part of the CLI contract: add fields, never rename them.
+type infoJSON struct {
+	File      string `json:"file"`
+	Version   int    `json:"version"`
+	Cipher    string `json:"cipher"`
+	KDF       string `json:"kdf"`
+	KeyFile   bool   `json:"key_file"`
+	ChunkSize int    `json:"chunk_size"`
+	Legacy    bool   `json:"legacy"`
+}
+
+func formatInfoJSON(name string, info seal.FileInfo) (string, error) {
+	b, err := json.Marshal(infoJSON{
+		File:      inLabel(name),
+		Version:   int(info.Version),
+		Cipher:    info.Cipher,
+		KDF:       info.KDF,
+		KeyFile:   info.KeyFile,
+		ChunkSize: info.ChunkSize,
+		Legacy:    info.Legacy,
+	})
+	return string(b), err
 }
 
 func formatInfo(name string, info seal.FileInfo) string {

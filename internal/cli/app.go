@@ -78,8 +78,9 @@ Usage:
   casemate decrypt [flags] [file...]   Decrypt files (strips .enc); with -extract, unpack
                                       a directory archive into a new directory
   casemate rekey   [flags] [file...]   Re-encrypt files in place with the current
-                                      format, optionally with a new password or key file
-  casemate info    [file...]           Show a file's format without decrypting it
+                                      format, optionally with a new password or key file;
+                                      -recursive walks directories, -dry-run lists only
+  casemate info    [flags] [file...]   Show a file's format without decrypting it (-json for JSON)
   casemate keygen  -out <path>         Create a random key file (use it with -keyfile)
   casemate version                     Show version information
 
