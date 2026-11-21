@@ -1,0 +1,31 @@
+# fish completion for casemate
+complete -c casemate -f
+complete -c casemate -n __fish_use_subcommand -a encrypt -d 'Encrypt files or directories'
+complete -c casemate -n __fish_use_subcommand -a decrypt -d 'Decrypt files'
+complete -c casemate -n __fish_use_subcommand -a rekey -d 'Re-encrypt files in place'
+complete -c casemate -n __fish_use_subcommand -a info -d 'Show a file format without decrypting'
+complete -c casemate -n __fish_use_subcommand -a keygen -d 'Create a random key file'
+complete -c casemate -n __fish_use_subcommand -a version -d 'Show version information'
+complete -c casemate -n __fish_use_subcommand -a help -d 'Show usage'
+
+for c in encrypt decrypt rekey
+  complete -c casemate -n "__fish_seen_subcommand_from $c" -l file -r -F -d 'Input file, repeatable'
+  complete -c casemate -n "__fish_seen_subcommand_from $c" -l out -r -F -d 'Output file'
+  complete -c casemate -n "__fish_seen_subcommand_from $c" -l password-file -r -F -d 'Read the password from a file'
+  complete -c casemate -n "__fish_seen_subcommand_from $c" -l password-env -x -d 'Read the password from an environment variable'
+  complete -c casemate -n "__fish_seen_subcommand_from $c" -l password-fd -x -d 'Read the password from a file descriptor'
+  complete -c casemate -n "__fish_seen_subcommand_from $c" -l keyfile -r -F -d 'Use a key file as a second factor'
+  complete -c casemate -n "__fish_seen_subcommand_from $c" -l strict -d 'Turn password warnings into errors'
+end
+complete -c casemate -n '__fish_seen_subcommand_from decrypt' -l extract -d 'Unpack a directory archive'
+complete -c casemate -n '__fish_seen_subcommand_from rekey' -l change-password -d 'Prompt for a new password'
+complete -c casemate -n '__fish_seen_subcommand_from rekey' -l new-password-file -r -F -d 'Read the new password from a file'
+complete -c casemate -n '__fish_seen_subcommand_from rekey' -l new-password-env -x -d 'Read the new password from an environment variable'
+complete -c casemate -n '__fish_seen_subcommand_from rekey' -l new-password-fd -x -d 'Read the new password from a file descriptor'
+complete -c casemate -n '__fish_seen_subcommand_from rekey' -l new-keyfile -r -F -d 'Set or replace the key file'
+complete -c casemate -n '__fish_seen_subcommand_from rekey' -l no-keyfile -d 'Remove the key file requirement'
+complete -c casemate -n '__fish_seen_subcommand_from rekey' -l recursive -d 'Rekey every encrypted file under a directory'
+complete -c casemate -n '__fish_seen_subcommand_from rekey' -l dry-run -d 'List what would be rekeyed without writing'
+complete -c casemate -n '__fish_seen_subcommand_from info' -l file -r -F -d 'Input file, repeatable'
+complete -c casemate -n '__fish_seen_subcommand_from info' -l json -d 'Print JSON'
+complete -c casemate -n '__fish_seen_subcommand_from keygen' -l out -r -F -d 'Where to write the key file'

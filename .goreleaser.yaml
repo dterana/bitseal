@@ -18,6 +18,10 @@ archives:
     files:
       - LICENSE
       - README.md
+      - src: completions/*
+        dst: completions
+      - src: man/casemate.1
+        dst: man/casemate.1
 
 # .deb and .rpm packages for Linux. macOS keeps using Homebrew.
 nfpms:
@@ -29,6 +33,15 @@ nfpms:
     license: MIT
     formats: [deb, rpm]
     bindir: /usr/bin
+    contents:
+      - src: completions/casemate.bash
+        dst: /usr/share/bash-completion/completions/casemate
+      - src: completions/casemate.zsh
+        dst: /usr/share/zsh/vendor-completions/_casemate
+      - src: completions/casemate.fish
+        dst: /usr/share/fish/vendor_completions.d/casemate.fish
+      - src: man/casemate.1
+        dst: /usr/share/man/man1/casemate.1
 
 checksum:
   name_template: checksums.txt

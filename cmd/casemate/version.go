@@ -2,7 +2,7 @@ package main
 
 import "runtime/debug"
 
-const Version = "0.7.0"
+const Version = "0.8.0"
 
 // Build is set at link time (-ldflags "-X main.Build=<rev>"); when it is not,
 // buildString falls back to the VCS or module information in the binary.
